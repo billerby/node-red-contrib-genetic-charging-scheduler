@@ -179,3 +179,223 @@ describe('Calculate', () => {
     }
   });
 });
+
+describe('Price spread calculations', () => {
+  test('should skip optimization when price spread is below threshold', () => {
+    jest.spyOn(Math, 'random').mockImplementation(random);
+    let now = Date.now();
+    now = now - (now % (60 * 60 * 1000));
+    
+    // Create prices with less than 10% spread
+    const priceData = [
+      { importPrice: 1.00, exportPrice: 0, start: new Date(now).toString() },
+      { importPrice: 1.07, exportPrice: 0, start: new Date(now + 60 * 60 * 1000).toString() },
+      { importPrice: 1.09, exportPrice: 0, start: new Date(now + 60 * 60 * 1000 * 2).toString() },
+    ];
+    
+    const productionForecast = priceData.map((v) => {
+      return { start: v.start, value: 0 };
+    });
+    const consumptionForecast = priceData.map((v) => {
+      return { start: v.start, value: 1.5 };
+    });
+
+    const config = {
+      priceData,
+      populationSize: 100,
+      numberOfPricePeriods: 2,
+      generations: 500,
+      mutationRate: 0.03,
+      minPriceSpreadPercent: 10,
+      batteryMaxEnergy: 3,
+      batteryMaxOutputPower: 3,
+      batteryMaxInputPower: 3,
+      averageConsumption: 1.5,
+      averageProduction: 0,
+      productionForecast,
+      consumptionForecast,
+      soc: 0,
+      excessPvEnergyUse: 0,
+    };
+
+    const strategy = calculateBatteryChargingStrategy(config);
+    
+    // Verify the strategy was skipped
+    expect(strategy.skippedDueToLowPriceSpread).toBe(true);
+    expect(strategy.priceSpreadPercentage).toBeLessThan(10);
+    expect(strategy.best.schedule.length).toBe(1);
+    expect(strategy.best.schedule[0].activity).toBe(0); // Should be idle
+  });
+
+  test('should run optimization when price spread is above threshold', () => {
+    jest.spyOn(Math, 'random').mockImplementation(random);
+    let now = Date.now();
+    now = now - (now % (60 * 60 * 1000));
+    
+    // Create prices with more than 10% spread
+    const priceData = [
+      { importPrice: 1.00, exportPrice: 0, start: new Date(now).toString() },
+      { importPrice: 1.50, exportPrice: 0, start: new Date(now + 60 * 60 * 1000).toString() },
+      { importPrice: 1.20, exportPrice: 0, start: new Date(now + 60 * 60 * 1000 * 2).toString() },
+    ];
+    
+    const productionForecast = priceData.map((v) => {
+      return { start: v.start, value: 0 };
+    });
+    const consumptionForecast = priceData.map((v) => {
+      return { start: v.start, value: 1.5 };
+    });
+
+    const config = {
+      priceData,
+      populationSize: 100,
+      numberOfPricePeriods: 2,
+      generations: 500,
+      mutationRate: 0.03,
+      minPriceSpreadPercent: 10,
+      batteryMaxEnergy: 3,
+      batteryMaxOutputPower: 3,
+      batteryMaxInputPower: 3,
+      averageConsumption: 1.5,
+      averageProduction: 0,
+      productionForecast,
+      consumptionForecast,
+      soc: 0,
+      excessPvEnergyUse: 0,
+    };
+
+    const strategy = calculateBatteryChargingStrategy(config);
+    
+    // Verify the strategy was not skipped
+    expect(strategy.skippedDueToLowPriceSpread).toBeFalsy();
+    expect(strategy.priceSpreadPercentage).toBeGreaterThan(10);
+    expect(strategy.best.schedule.length).toBeGreaterThan(1);
+  });
+
+  test('should use default threshold when not specified', () => {
+    jest.spyOn(Math, 'random').mockImplementation(random);
+    let now = Date.now();
+    now = now - (now % (60 * 60 * 1000));
+    
+    const priceData = [
+      { importPrice: 1.00, exportPrice: 0, start: new Date(now).toString() },
+      { importPrice: 1.05, exportPrice: 0, start: new Date(now + 60 * 60 * 1000).toString() },
+      { importPrice: 1.08, exportPrice: 0, start: new Date(now + 60 * 60 * 1000 * 2).toString() },
+    ];
+    
+    const productionForecast = priceData.map((v) => {
+      return { start: v.start, value: 0 };
+    });
+    const consumptionForecast = priceData.map((v) => {
+      return { start: v.start, value: 1.5 };
+    });
+    
+    const config = {
+      priceData,
+      populationSize: 100,
+      numberOfPricePeriods: 2,
+      generations: 500,
+      mutationRate: 0.03,
+      // minPriceSpreadPercent not specified - should use default 10%
+      batteryMaxEnergy: 3,
+      batteryMaxOutputPower: 3,
+      batteryMaxInputPower: 3,
+      averageConsumption: 1.5,
+      productionForecast,
+      consumptionForecast,
+      soc: 0,
+      excessPvEnergyUse: 0,
+    };
+
+    const strategy = calculateBatteryChargingStrategy(config);
+    
+    // Verify default threshold was used
+    expect(strategy.skippedDueToLowPriceSpread).toBe(true);
+    expect(strategy.priceSpreadPercentage).toBeLessThan(10);
+  });
+
+  test('should handle custom threshold values', () => {
+    jest.spyOn(Math, 'random').mockImplementation(random);
+    let now = Date.now();
+    now = now - (now % (60 * 60 * 1000));
+    
+    const priceData = [
+      { importPrice: 1.00, exportPrice: 0, start: new Date(now).toString() },
+      { importPrice: 1.05, exportPrice: 0, start: new Date(now + 60 * 60 * 1000).toString() },
+      { importPrice: 1.08, exportPrice: 0, start: new Date(now + 60 * 60 * 1000 * 2).toString() },
+    ];
+    
+    const productionForecast = priceData.map((v) => {
+      return { start: v.start, value: 0 };
+    });
+    const consumptionForecast = priceData.map((v) => {
+      return { start: v.start, value: 1.5 };
+    });
+    
+    const config = {
+      priceData,
+      populationSize: 100,
+      numberOfPricePeriods: 2,
+      generations: 500,
+      mutationRate: 0.03,
+      minPriceSpreadPercent: 5, // Set lower threshold
+      batteryMaxEnergy: 3,
+      batteryMaxOutputPower: 3,
+      batteryMaxInputPower: 3,
+      averageConsumption: 1.5,
+      productionForecast,
+      consumptionForecast,
+      soc: 0,
+      excessPvEnergyUse: 0,
+    };
+
+    const strategy = calculateBatteryChargingStrategy(config);
+    
+    // Verify custom threshold was used
+    expect(strategy.skippedDueToLowPriceSpread).toBe(false);
+    expect(strategy.priceSpreadPercentage).toBeGreaterThan(5);
+  });
+
+  test('should use correct default threshold value of 12%', () => {
+    jest.spyOn(Math, 'random').mockImplementation(random);
+    let now = Date.now();
+    now = now - (now % (60 * 60 * 1000));
+    
+    // Create prices with exactly 11% spread - should skip with 12% threshold but would not have skipped with 10%
+    const priceData = [
+      { importPrice: 1.00, exportPrice: 0, start: new Date(now).toString() },
+      { importPrice: 1.11, exportPrice: 0, start: new Date(now + 60 * 60 * 1000).toString() },
+      { importPrice: 1.05, exportPrice: 0, start: new Date(now + 60 * 60 * 1000 * 2).toString() },
+    ];
+    
+    const productionForecast = priceData.map((v) => {
+      return { start: v.start, value: 0 };
+    });
+    const consumptionForecast = priceData.map((v) => {
+      return { start: v.start, value: 1.5 };
+    });
+    
+    const config = {
+      priceData,
+      populationSize: 100,
+      numberOfPricePeriods: 2,
+      generations: 500,
+      mutationRate: 0.03,
+      // minPriceSpreadPercent not specified - should use default 12%
+      batteryMaxEnergy: 3,
+      batteryMaxOutputPower: 3,
+      batteryMaxInputPower: 3,
+      averageConsumption: 1.5,
+      productionForecast,
+      consumptionForecast,
+      soc: 0,
+      excessPvEnergyUse: 0,
+    };
+
+    const strategy = calculateBatteryChargingStrategy(config);
+    
+    // With 11% spread and 12% threshold, should skip
+    expect(strategy.skippedDueToLowPriceSpread).toBe(true);
+    expect(strategy.priceSpreadPercentage).toBeCloseTo(11, 1);
+  });
+});

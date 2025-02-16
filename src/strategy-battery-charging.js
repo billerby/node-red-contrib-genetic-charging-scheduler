@@ -16,6 +16,7 @@ const node = (RED) => {
         batteryMaxEnergy,
         batteryMaxInputPower,
         averageConsumption,
+        minPriceSpreadPercent,
       } = config
 
       this.on('input', async (msg, send, done) => {
@@ -32,6 +33,7 @@ const node = (RED) => {
           numberOfPricePeriods,
           generations,
           mutationRate: mutationRate / 100,
+          minPriceSpreadPercent,
           batteryMaxEnergy,
           batteryMaxOutputPower: batteryMaxInputPower,
           batteryMaxInputPower,
@@ -48,6 +50,8 @@ const node = (RED) => {
           msg.payload.schedule = strategy.best.schedule
           msg.payload.excessPvEnergyUse = strategy.best.excessPvEnergyUse
           msg.payload.cost = strategy.best.cost
+          msg.payload.priceSpreadPercentage = strategy.priceSpreadPercentage
+          msg.payload.skippedDueToLowPriceSpread = strategy.skippedDueToLowPriceSpread
           msg.payload.noBattery = {
             schedule: strategy.noBattery.schedule,
             excessPvEnergyUse: strategy.noBattery.excessPvEnergyUse,

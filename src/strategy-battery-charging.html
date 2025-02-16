@@ -1,57 +1,62 @@
 <script type="text/javascript">
     RED.nodes.registerType('enell-strategy-genetic-charging', {
-        category: 'Power Saver',
-        color: '#a6bbcf',
-        defaults: {
-            name: { value: "" },
-            populationSize: {
-                value: 20,
-                required: true,
-                validate: RED.validators.number(),
-            },
-            generations: {
-                value: 400,
-                required: true,
-                validate: RED.validators.number(),
-            },
-            mutationRate: {
-                value: 3,
-                required: true,
-                validate: RED.validators.number(),
-            },
-            numberOfPricePeriods: {
-                value: 8,
-                required: true,
-                validate: RED.validators.number(),
-            },
-            batteryMaxEnergy: {
-                value: 5,
-                required: true,
-                validate: RED.validators.number(),
-            },
-            batteryMaxInputPower: {
-                value: 2.5,
-                required: true,
-                validate: RED.validators.number(),
-            },
-            batteryMaxOutputPower: {
-                value: 2.5,
-                required: true,
-                validate: RED.validators.number(),
-            },
-            averageConsumption: {
-                value: 1.5,
-                required: true,
-                validate: RED.validators.number(),
-            },
+    category: 'Power Saver',
+    color: '#a6bbcf',
+    defaults: {
+        name: { value: "" },
+        populationSize: {
+            value: 20,
+            required: true,
+            validate: RED.validators.number(),
         },
-        inputs: 1,
-        outputs: 1,
-        icon: "font-awesome/fa-battery",
-        label: function () {
-            return this.name || "Battery charging schedule";
-        }
-    });
+        generations: {
+            value: 400,
+            required: true,
+            validate: RED.validators.number(),
+        },
+        mutationRate: {
+            value: 3,
+            required: true,
+            validate: RED.validators.number(),
+        },
+        numberOfPricePeriods: {
+            value: 8,
+            required: true,
+            validate: RED.validators.number(),
+        },
+        minPriceSpreadPercent: {
+            value: 12,
+            required: true,
+            validate: RED.validators.number(),
+        },
+        batteryMaxEnergy: {
+            value: 5,
+            required: true,
+            validate: RED.validators.number(),
+        },
+        batteryMaxInputPower: {
+            value: 2.5,
+            required: true,
+            validate: RED.validators.number(),
+        },
+        batteryMaxOutputPower: {
+            value: 2.5,
+            required: true,
+            validate: RED.validators.number(),
+        },
+        averageConsumption: {
+            value: 1.5,
+            required: true,
+            validate: RED.validators.number(),
+        },
+    },
+    inputs: 1,
+    outputs: 1,
+    icon: "font-awesome/fa-battery",
+    label: function () {
+        return this.name || "Battery charging schedule";
+    }
+});
 </script>
 
 <script type="text/html" data-template-name="enell-strategy-genetic-charging">
@@ -74,6 +79,15 @@
         <label for="node-input-averageConsumption" style="width: 240px">Average consumption per hour (kW)</label>
         <input type="text" id="node-input-averageConsumption"/>
     </div>
+    <h3>Optimization Settings</h3>
+    <div class="form-row">
+        <label for="node-input-minPriceSpreadPercent" style="width: 240px">Minimum price spread (%)</label>
+        <input type="text" id="node-input-minPriceSpreadPercent"/>
+        <div style="max-width: 460px; margin-left: 240px; color: #666;">
+            Minimum price difference required to activate battery charging/discharging cycles. 
+            If the price spread is lower than this percentage, the battery will remain idle to prevent wear.
+        </div>
+    </div>    
     <h3>Genetic algorithm</h3>
     <div class="form-row">
         <label for="node-input-populationSize" style="width: 240px">Population size</label>

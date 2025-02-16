@@ -88,10 +88,41 @@ const mergeInput = (config) => {
 };
 
 const calculateBatteryChargingStrategy = (config) => {
-  const { generations } = config;
+  const { generations, minPriceSpreadPercent = 12 } = config;
 
   const input = mergeInput(config);
   if (input === undefined || input.length === 0) return {};
+
+  // Calculate price spread as a percentage
+  const prices = input.map(period => period.importPrice);
+  const maxPrice = Math.max(...prices);
+  const minPrice = Math.min(...prices);
+  const priceSpreadPercentage = ((maxPrice - minPrice) / minPrice) * 100;
+
+  // If price spread is less than threshold, return a strategy that keeps the battery idle
+  if (priceSpreadPercentage < minPriceSpreadPercent) {
+    const noBattery = {
+      periods: new DoublyLinkedList().insertBack({ start: 0, activity: 0 }),
+      excessPvEnergyUse: 0,
+    };
+    
+    const idleStrategy = {
+      best: {
+        schedule: toSchedule({ ...config, input }, noBattery),
+        excessPvEnergyUse: noBattery.excessPvEnergyUse,
+        cost: cost(allPeriods({ ...config, input }, noBattery)),
+      },
+      noBattery: {
+        schedule: toSchedule({ ...config, input }, noBattery),
+        excessPvEnergyUse: noBattery.excessPvEnergyUse,
+        cost: cost(allPeriods({ ...config, input }, noBattery)),
+      },
+      skippedDueToLowPriceSpread: true,
+      priceSpreadPercentage: priceSpreadPercentage
+    };
+    
+    return idleStrategy;
+  }
 
   const props = {
     ...config,
@@ -112,13 +143,12 @@ const calculateBatteryChargingStrategy = (config) => {
     geneticAlgorithm.evolve();
   }
 
-  const p = geneticAlgorithm.population();
-
   const best = geneticAlgorithm.best();
   const noBattery = {
     periods: new DoublyLinkedList().insertBack({ start: 0, activity: 0 }),
     excessPvEnergyUse: 0,
   };
+
   return {
     best: {
       schedule: toSchedule(props, best),
@@ -130,9 +160,10 @@ const calculateBatteryChargingStrategy = (config) => {
       excessPvEnergyUse: noBattery.excessPvEnergyUse,
       cost: cost(allPeriods(props, noBattery)),
     },
+    skippedDueToLowPriceSpread: false,  // Explicitly set to false when optimization runs
+    priceSpreadPercentage: priceSpreadPercentage
   };
 };
-
 module.exports = {
   fitnessFunction,
   calculateBatteryChargingStrategy,

@@ -231,4 +231,61 @@ describe('Battery charging strategy Node', () => {
       n1.receive({})
     })
   })
+
+  it('should include price spread information in output', (done) => {
+    const flow = [
+      {
+        id: 'n1',
+        type: 'enell-strategy-genetic-charging',
+        name: 'test name',
+        populationSize: 10,
+        numberOfPricePeriods: 3,
+        generations: 10,
+        mutationRate: 3,
+        minPriceSpreadPercent: 15, // Custom threshold
+        batteryMaxEnergy: 5,
+        batteryMaxInputPower: 2.5,
+        averageConsumption: 1.5,
+        wires: [['n2']],
+      },
+      { id: 'n2', type: 'helper' },
+    ];
+    
+    helper.load(node, flow, function callback() {
+      const n2 = helper.getNode('n2');
+      const n1 = helper.getNode('n1');
+      
+      n2.on('input', function inputCallback(msg) {
+        expect(msg).toHaveProperty('payload');
+        expect(msg.payload).toHaveProperty('priceSpreadPercentage');
+        expect(msg.payload).toHaveProperty('skippedDueToLowPriceSpread');
+        done();
+      });
+
+      let now = Date.now();
+      now = now - (now % (60 * 60 * 1000));
+      const inputPayload = {
+        payload: {
+          priceData: [
+            {
+              value: 1,
+              start: new Date(now + 60 * 60 * 1000 * 0).toString(),
+            },
+            {
+              value: 1.05,
+              start: new Date(now + 60 * 60 * 1000 * 1).toString(),
+            },
+            {
+              value: 1.08,
+              start: new Date(now + 60 * 60 * 1000 * 2).toString(),
+            },
+          ],
+        },
+      };
+
+      n1.receive(inputPayload);
+    })
+  })
 })
+
+
