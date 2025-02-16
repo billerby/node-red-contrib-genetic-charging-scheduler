@@ -9,10 +9,9 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     steps:
-      - uses: mskelton/setup-yarn@v1
+      - uses: mskelton/setup-yarn@v3
         with:
           node-version: lts/*
-          flags: --immutable-cache
           cache: yarn
       - name: Lint
         run: yarn run lint

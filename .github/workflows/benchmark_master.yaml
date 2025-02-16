@@ -10,7 +10,7 @@ jobs:
     name: Run JavaScript benchmark
     runs-on: ubuntu-latest
     steps:
-      - uses: mskelton/setup-yarn@v1
+      - uses: mskelton/setup-yarn@v3
         with:
           node-version: lts/*
           flags: --immutable-cache
@@ -18,7 +18,7 @@ jobs:
       - name: Run benchmark
         run: yarn benchmark
       - name: Download previous benchmark data
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ./cache
           key: ${{ runner.os }}-benchmark
