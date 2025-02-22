@@ -1,15 +1,43 @@
-function* splitIntoHourIntervalsGenerator(seed) {
+function* splitIntoHourIntervalsGenerator(seed, props) {
   let remainingDuration = seed.duration;
   let start = seed.start;
+  
   while (remainingDuration > 0) {
-    const i = Math.min(60 - (start % 60), remainingDuration);
+    // Default split at hour boundaries
+    let splitDuration = Math.min(60 - (start % 60), remainingDuration);
+    
+    // If charging restrictions are enabled, check for restriction boundaries
+    if (props?.chargingRestrictions && seed.activity === 1) {
+      const baseDate = new Date(props.input[0].start);
+      const periodDate = new Date(baseDate);
+      periodDate.setMinutes(periodDate.getMinutes() + start);
+      
+      // If currently allowed but not allowed in next period, split at restriction start
+      if (isChargingAllowed(periodDate, props.chargingRestrictions)) {
+        const nextMinute = new Date(periodDate);
+        nextMinute.setMinutes(nextMinute.getMinutes() + splitDuration);
+        if (!isChargingAllowed(nextMinute, props.chargingRestrictions)) {
+          // Find exact minute where restriction starts
+          for (let i = 1; i <= splitDuration; i++) {
+            const checkDate = new Date(periodDate);
+            checkDate.setMinutes(checkDate.getMinutes() + i);
+            if (!isChargingAllowed(checkDate, props.chargingRestrictions)) {
+              splitDuration = i;
+              break;
+            }
+          }
+        }
+      }
+    }
+    
     yield {
       start: start,
-      duration: i,
+      duration: splitDuration,
       activity: seed.activity,
     };
-    start += i;
-    remainingDuration -= i;
+    
+    start += splitDuration;
+    remainingDuration -= splitDuration;
   }
   return;
 }
@@ -141,20 +169,39 @@ const calculateIntervalScore = (props) => {
   }
 };
 
-const calculatePeriodScore = (
-  props,
-  period,
-  excessPvEnergyUse,
-  _currentCharge
-) => {
+const calculatePeriodScore = (props, period, excessPvEnergyUse, _currentCharge) => {
   const {
     input,
     batteryMaxEnergy,
     batteryMaxInputPower,
     batteryMaxOutputPower,
+    chargingRestrictions
   } = props;
+  
   let cost = 0;
   let currentCharge = _currentCharge;
+  
+  // Check if this is a charging period that overlaps with restrictions
+  if (period.activity === 1 && chargingRestrictions) {
+    const baseDate = new Date(input[0].start);
+    const periodStart = new Date(baseDate);
+    periodStart.setMinutes(periodStart.getMinutes() + period.start);
+    
+    // Check first minute of period
+    if (!isChargingAllowed(periodStart, chargingRestrictions)) {
+      // Return massive penalty for restricted charging
+      return [1000000, 0]; // Extremely high cost, no charge gain
+    }
+    
+    // Check end of period
+    const periodEnd = new Date(periodStart);
+    periodEnd.setMinutes(periodEnd.getMinutes() + period.duration);
+    if (!isChargingAllowed(periodEnd, chargingRestrictions)) {
+      // Return massive penalty for restricted charging
+      return [1000000, 0];
+    }
+  }
+
   for (const interval of splitIntoHourIntervals(period)) {
     const duration = interval.duration / 60;
     const maxCharge = Math.min(
@@ -188,18 +235,42 @@ const cost = (periods) => {
   return periods.reduce((acc, cur) => acc + cur.cost, 0);
 };
 
+const { isChargingAllowed } = require('./utils');
+
 const fitnessFunction = (props) => (phenotype) => {
   const periods = allPeriods(props, phenotype);
   let score = -cost(periods);
 
-  let averagePrice =
-    props.input.reduce((acc, cur) => acc + cur.importPrice, 0) /
-    props.input.length;
+  // Calculate average price for penalty calculations
+  let averagePrice = props.input.reduce((acc, cur) => acc + cur.importPrice, 0) / props.input.length;
+  
+  // Apply existing penalty for zero charge/discharge periods
   score -= periods.reduce((acc, cur) => {
     if (cur.activity != 0 && cur.charge == 0)
       return acc + (cur.duration * averagePrice) / 60;
     else return acc;
   }, 0);
+
+  // Add new penalty for charging during restricted times
+  if (props.chargingRestrictions) {
+    const baseDate = new Date(props.input[0].start);
+    score -= periods.reduce((acc, period) => {
+      if (period.activity === 1) { // If charging
+        // Check each hour within the period
+        for (let minute = 0; minute < period.duration; minute += 60) {
+          const periodDate = new Date(baseDate);
+          periodDate.setMinutes(periodDate.getMinutes() + period.start + minute);
+          
+          if (!isChargingAllowed(periodDate, props.chargingRestrictions)) {
+            // Apply extreme penalty for charging during restricted time
+            // Using 20x normal price as penalty to strongly discourage any charging during restricted hours
+            return acc + (60 * averagePrice * 20); // 20x penalty multiplier
+          }
+        }
+      }
+      return acc;
+    }, 0);
+  }
 
   return score;
 };

@@ -6,7 +6,15 @@ describe('Mutation', () => {
   mockRandomForEach(0.4);
 
   test('should mutate', () => {
-    const mutate = mutationFunction({ totalDuration: 120, mutationRate: 1 });
+    // Add mock input data
+    const mockDate = new Date('2024-02-22T00:00:00.000Z');
+    const mutate = mutationFunction({ 
+      totalDuration: 120, 
+      mutationRate: 1,
+      input: [
+        { start: mockDate.toISOString() }
+      ]
+    });
 
     const periods = new DoublyLinkedList()
       .insertBack({ start: 0, activity: 1 })

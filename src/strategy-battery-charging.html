@@ -1,5 +1,13 @@
 <script type="text/javascript">
-    RED.nodes.registerType('enell-strategy-genetic-charging', {
+
+    function toggleRestrictionFields(enabled) {
+        const fields = document.getElementsByClassName('restriction-field');
+        for (let field of fields) {
+            field.disabled = !enabled;
+        }
+    }
+
+    RED.nodes.registerType('enell-strategy-genetic-charging-seasonal', {
         category: 'Power Saver',
         color: '#a6bbcf',
         defaults: {
@@ -44,17 +52,69 @@
                 required: true,
                 validate: RED.validators.number(),
             },
+            // Add new charging restriction fields
+            restrictChargingEnabled: {
+                value: false,
+                required: false
+            },
+            restrictionStartDate: {
+            value: "11-01",  // November 1st
+            required: false,
+                validate: (v) => {
+                    // Optional: Add validation for MM-DD format
+                    return /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v);
+                }
+            },
+            restrictionEndDate: {
+                value: "03-31",  // March 31st
+                required: false,
+                validate: (v) => {
+                    // Optional: Add validation for MM-DD format
+                    return /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v);
+                }
+            },
+            restrictionStartTime: {
+                value: "07:00",
+                required: false,
+                validate: (v) => {
+                    // Optional: Add validation for HH:mm format
+                    return /^([01]\d|2[0-3]):([0-5]\d)$/.test(v);
+                }
+            },
+            restrictionEndTime: {
+                value: "20:00",
+                required: false,
+                validate: (v) => {
+                    // Optional: Add validation for HH:mm format
+                    return /^([01]\d|2[0-3]):([0-5]\d)$/.test(v);
+                }
+            },
+            allowWeekends: {
+                value: true,
+                required: false
+            },
         },
         inputs: 1,
         outputs: 1,
         icon: "font-awesome/fa-battery",
         label: function () {
             return this.name || "Battery charging schedule";
+        },
+        oneditprepare: function() {
+            // Get initial state
+            var enabled = $('#node-input-restrictChargingEnabled').is(':checked');
+            // Only disable/enable fields, don't modify their values
+            $('.restriction-field').prop('disabled', !enabled);
+
+            // Add change handler
+            $('#node-input-restrictChargingEnabled').on('change', function() {
+                $('.restriction-field').prop('disabled', !this.checked);
+            });
         }
     });
 </script>
 
-<script type="text/html" data-template-name="enell-strategy-genetic-charging">
+<script type="text/html" data-template-name="enell-strategy-genetic-charging-seasonal">
     <div class="form-row">
         <label for="node-input-name" style="width: 240px"><i class="fa fa-tag"></i> Name</label>
         <input type="text" id="node-input-name" placeholder="Name"/>
@@ -94,8 +154,49 @@
         <label for="node-input-numberOfPricePeriods" style="width: 240px">Number of charging/discharging periods</label>
         <input type="text" id="node-input-numberOfPricePeriods"/>
     </div>
+    <div class="form-row">
+        <label for="node-input-restrictChargingEnabled" style="width: 240px;">Enable restrictions</label>
+        <div style="display: inline-block; vertical-align: middle;">
+            <input type="checkbox" id="node-input-restrictChargingEnabled" style="width: auto; margin-right: 5px; vertical-align: middle;" onchange="toggleRestrictionFields(this.checked)"/>
+            <span style="vertical-align: middle;">Enable seasonal charging restrictions</span>
+        </div>
+    </div>
+    
+    <div class="form-row">
+        <label for="node-input-restrictionStartDate" style="width: 240px">Restriction start date (MM-DD)</label>
+        <input type="text" id="node-input-restrictionStartDate" class="restriction-field"/>
+    </div>
+    
+    <div class="form-row">
+        <label for="node-input-restrictionEndDate" style="width: 240px">Restriction end date (MM-DD)</label>
+        <input type="text" id="node-input-restrictionEndDate" class="restriction-field"/>
+    </div>
+    
+    <div class="form-row">
+        <label for="node-input-restrictionStartTime" style="width: 240px">Daily restriction start time (HH:mm)</label>
+        <input type="text" id="node-input-restrictionStartTime" class="restriction-field"/>
+    </div>
+    
+    <div class="form-row">
+        <label for="node-input-restrictionEndTime" style="width: 240px">Daily restriction end time (HH:mm)</label>
+        <input type="text" id="node-input-restrictionEndTime" class="restriction-field"/>
+    </div>
+
+    <div class="form-row">
+        <label for="node-input-allowWeekends" style="width: 240px;">Weekend restrictions</label>
+        <input type="checkbox" id="node-input-allowWeekends" class="restriction-field" style="width: auto;" title="When checked, allows charging during weekends regardless of time restrictions"/>
+        <span class="restriction-field" style="vertical-align: middle; margin-left: 5px;">Allow charging during weekends</span>
+    </div>    
+    
 </script>
 
-<script type="text/html" data-help-name="enell-strategy-genetic-charging">
+<script type="text/html" data-help-name="enell-strategy-genetic-charging-seasonal">
     <p>A strategy addon for powersaver to calculate the optimal batter charging schedule using genetic algorithms</p>
 </script>
+
+<style>
+    .restriction-field[disabled] {
+        background-color: #f5f5f5;
+        color: #999;
+    }
+</style>

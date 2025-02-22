@@ -88,7 +88,7 @@ const mergeInput = (config) => {
 };
 
 const calculateBatteryChargingStrategy = (config) => {
-  const { generations } = config;
+  const { generations, chargingRestrictions } = config;
 
   const input = mergeInput(config);
   if (input === undefined || input.length === 0) return {};
@@ -97,6 +97,7 @@ const calculateBatteryChargingStrategy = (config) => {
     ...config,
     input,
     totalDuration: input.length * 60,
+    chargingRestrictions,
   };
 
   const options = {
