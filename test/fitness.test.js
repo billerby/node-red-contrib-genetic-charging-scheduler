@@ -452,15 +452,14 @@ describe('Fitness', () => {
         },
     ];
 
-    // Calculate average price before calculating fitness
-    const avgPrice = props.input.reduce((sum, period) => sum + period.importPrice, 0) / props.input.length;
-    props.averagePrice = avgPrice;
+    // Ensure EV charging is disabled for this test since it's specifically testing battery charging
+    props.evChargingEnabled = false;
 
     let score = fitnessFunction(props)({
         periods: new DoublyLinkedList().insertBack({ start: 0, activity: 1 }),
         excessPvEnergyUse: 0,
     });
-    
+
     // With a full battery, we expect:
     // First hour: importPrice: 1, consumption: 1.5 => cost: 1.5
     // Second hour: importPrice: 500, consumption: 1.5 => cost: 750
