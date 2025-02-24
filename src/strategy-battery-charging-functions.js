@@ -16,16 +16,18 @@ const toSchedule = (props, phenotype) => {
     return new Date(date.getTime() + minutes * 60000);
   };
 
-  const activityToName = (activity) => {
-    switch (activity) {
+const activityToName = (activity) => {
+  switch (activity) {
       case -1:
-        return 'discharging';
+          return 'discharging';
       case 1:
-        return 'charging';
+          return 'charging_battery';
+      case 2:
+          return 'charging_ev';
       default:
-        return 'idle';
+          return 'idle';
     }
-  };
+};
 
   const schedule = [];
   const periodStart = new Date(input[0].start);

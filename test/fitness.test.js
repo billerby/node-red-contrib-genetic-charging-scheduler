@@ -429,32 +429,46 @@ describe('Fitness', () => {
     let now = Date.now();
     now = now - (now % (60 * 60 * 1000));
     props.input = [
-      {
-        start: new Date(now).toString(),
-        importPrice: 1,
-        exportPrice: 1,
-        consumption: 1.5,
-        production: 0,
-      },
-      {
-        start: new Date(now + 60 * 60 * 1000).toString(),
-        importPrice: 500,
-        exportPrice: 500,
-        consumption: 1.5,
-        production: 0,
-      },
-      {
-        start: new Date(now + 60 * 60 * 1000 * 2).toString(),
-        importPrice: 500,
-        exportPrice: 500,
-        consumption: 1.5,
-        production: 0,
-      },
+        {
+            start: new Date(now).toString(),
+            importPrice: 1,
+            exportPrice: 1,
+            consumption: 1.5,
+            production: 0,
+        },
+        {
+            start: new Date(now + 60 * 60 * 1000).toString(),
+            importPrice: 500,
+            exportPrice: 500,
+            consumption: 1.5,
+            production: 0,
+        },
+        {
+            start: new Date(now + 60 * 60 * 1000 * 2).toString(),
+            importPrice: 500,
+            exportPrice: 500,
+            consumption: 1.5,
+            production: 0,
+        },
     ];
+
+    // Calculate average price before calculating fitness
+    const avgPrice = props.input.reduce((sum, period) => sum + period.importPrice, 0) / props.input.length;
+    props.averagePrice = avgPrice;
+
     let score = fitnessFunction(props)({
-      periods: new DoublyLinkedList().insertBack({ start: 0, activity: 1 }),
-      excessPvEnergyUse: 0,
+        periods: new DoublyLinkedList().insertBack({ start: 0, activity: 1 }),
+        excessPvEnergyUse: 0,
     });
+    
+    // With a full battery, we expect:
+    // First hour: importPrice: 1, consumption: 1.5 => cost: 1.5
+    // Second hour: importPrice: 500, consumption: 1.5 => cost: 750
+    // Third hour: importPrice: 500, consumption: 1.5 => cost: 750
+    // Total expected cost: 1.5 + 750 + 750 = 1501.5
+    // Fitness score is negative cost: -1501.5
+    // Plus penalty for charging when battery full (-1000)
+    // Plus average price penalty for zero charge: -1 * avgPrice * duration/60
     expect(score).toEqual(-2502.5);
-  });
+});
 });

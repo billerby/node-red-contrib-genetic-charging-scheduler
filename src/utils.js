@@ -2,8 +2,10 @@ const random = (min, max) => {
   return Math.floor(Math.random() * (max - min) + min);
 };
 
-const generateRandomActivity = (excludedValue) => {
-  const randomArray = [-1, 0, 1].filter((val) => val !== excludedValue);
+const generateRandomActivity = (excludedValue, evEnabled = false) => {
+  // When EV charging is enabled, include 2 as a possible activity
+  const possibleActivities = evEnabled ? [-1, 0, 1, 2] : [-1, 0, 1];
+  const randomArray = possibleActivities.filter((val) => val !== excludedValue);
   const randomIndex = Math.floor(Math.random() * randomArray.length);
   return randomArray[randomIndex];
 };

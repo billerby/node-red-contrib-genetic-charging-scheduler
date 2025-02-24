@@ -171,62 +171,109 @@ const calculateIntervalScore = (props) => {
 
 const calculatePeriodScore = (props, period, excessPvEnergyUse, _currentCharge) => {
   const {
-    input,
-    batteryMaxEnergy,
-    batteryMaxInputPower,
-    batteryMaxOutputPower,
-    chargingRestrictions
+      input,
+      batteryMaxEnergy,
+      batteryMaxInputPower,
+      batteryMaxOutputPower,
+      chargingRestrictions,
+      evChargingEnabled,
+      evMaxChargingPower,
+      ev_soc,
+      ev_limit
   } = props;
-  
+
+  // Check charging restrictions
+  if ((period.activity === 1 || period.activity === 2) && chargingRestrictions) {
+      const baseDate = new Date(input[0].start);
+      const periodStart = new Date(baseDate);
+      periodStart.setMinutes(periodStart.getMinutes() + period.start);
+      
+      if (!isChargingAllowed(periodStart, chargingRestrictions)) {
+          return [1000000, 0];
+      }
+      
+      const periodEnd = new Date(periodStart);
+      periodEnd.setMinutes(periodEnd.getMinutes() + period.duration);
+      if (!isChargingAllowed(periodEnd, chargingRestrictions)) {
+          return [1000000, 0];
+      }
+  }
+
+  // Calculate average price for reference
+  const avgPrice = input.reduce((acc, cur) => acc + cur.importPrice, 0) / input.length;
+
+  // EV charging period
+  if (period.activity === 2) {
+      if (!evChargingEnabled || ev_soc >= ev_limit) {
+          return [1000000, 0];
+      }
+
+      let cost = 0;
+      let evCharge = 0;
+
+      for (const interval of splitIntoHourIntervals(period)) {
+          const duration = interval.duration / 60;
+          const maxCharge = Math.min(
+              evMaxChargingPower * duration,
+              ev_limit - ev_soc
+          );
+
+          const hourIndex = Math.floor(interval.start / 60);
+          const { importPrice, exportPrice, consumption, production } = input[hourIndex];
+
+          const consumedFromProduction = Math.min(consumption, production);
+          const evChargeFromProduction = Math.min(production - consumedFromProduction, maxCharge);
+          const evChargeFromGrid = maxCharge - evChargeFromProduction;
+          
+          // Only apply price penalty to actual grid charging
+          const pricePenalty = evChargeFromGrid > 0 && importPrice > avgPrice ? 1.5 : 1;
+          cost += evChargeFromGrid * importPrice * pricePenalty;
+          evCharge += maxCharge;
+      }
+
+      return [cost, evCharge];
+  }
+
+  // Home battery logic
   let cost = 0;
   let currentCharge = _currentCharge;
   
-  // Check if this is a charging period that overlaps with restrictions
-  if (period.activity === 1 && chargingRestrictions) {
-    const baseDate = new Date(input[0].start);
-    const periodStart = new Date(baseDate);
-    periodStart.setMinutes(periodStart.getMinutes() + period.start);
-    
-    // Check first minute of period
-    if (!isChargingAllowed(periodStart, chargingRestrictions)) {
-      // Return massive penalty for restricted charging
-      return [1000000, 0]; // Extremely high cost, no charge gain
-    }
-    
-    // Check end of period
-    const periodEnd = new Date(periodStart);
-    periodEnd.setMinutes(periodEnd.getMinutes() + period.duration);
-    if (!isChargingAllowed(periodEnd, chargingRestrictions)) {
-      // Return massive penalty for restricted charging
-      return [1000000, 0];
-    }
-  }
-
   for (const interval of splitIntoHourIntervals(period)) {
-    const duration = interval.duration / 60;
-    const maxCharge = Math.min(
-      batteryMaxInputPower * duration,
-      batteryMaxEnergy - currentCharge
-    );
-    const maxDischarge = Math.min(
-      batteryMaxOutputPower * duration,
-      currentCharge
-    );
-    const { importPrice, exportPrice, consumption, production } =
-      input[Math.floor(interval.start / 60)];
+      const duration = interval.duration / 60;
+      const maxCharge = Math.min(
+          batteryMaxInputPower * duration,
+          batteryMaxEnergy - currentCharge
+      );
+      const maxDischarge = Math.min(
+          batteryMaxOutputPower * duration,
+          currentCharge
+      );
 
-    const v = calculateIntervalScore({
-      activity: interval.activity,
-      importPrice,
-      exportPrice,
-      consumption: consumption * duration,
-      production: production * duration,
-      maxCharge,
-      maxDischarge,
-      excessPvEnergyUse: excessPvEnergyUse,
-    });
-    cost += v[0];
-    currentCharge += v[1];
+      const hourIndex = Math.floor(interval.start / 60);
+      const { importPrice, exportPrice, consumption, production } = input[hourIndex];
+
+      // Calculate potential charge from grid
+      const consumedFromProduction = Math.min(consumption, production);
+      const potentialChargeFromProduction = period.activity === 1 ? 
+          Math.min(production - consumedFromProduction, maxCharge) : 0;
+      const potentialChargeFromGrid = period.activity === 1 ? 
+          maxCharge - potentialChargeFromProduction : 0;
+
+      // Only apply price penalty if we would actually be charging from grid
+      const pricePenalty = potentialChargeFromGrid > 0 && importPrice > avgPrice ? 1.2 : 1;
+
+      const v = calculateIntervalScore({
+          activity: interval.activity,
+          importPrice: importPrice * pricePenalty,
+          exportPrice,
+          consumption: consumption * duration,
+          production: production * duration,
+          maxCharge,
+          maxDischarge,
+          excessPvEnergyUse
+      });
+      cost += v[0];
+      currentCharge += v[1];
   }
   return [cost, currentCharge - _currentCharge];
 };

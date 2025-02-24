@@ -1,4 +1,4 @@
-const { expect, describe, it, afterEach } = require('@jest/globals');
+const { expect, describe, it, afterEach, beforeEach } = require('@jest/globals');
 const {
   calculateBatteryChargingStrategy,
 } = require('../src/strategy-battery-charging-functions');
@@ -273,4 +273,161 @@ describe('Charging Time Restrictions', () => {
     const chargingPeriods = strategy.best.schedule.filter(period => period.activity === 1);
     expect(chargingPeriods.length).toBeGreaterThan(0);
   });
+});
+
+describe('EV Charging Strategy Tests', () => {
+  let baseConfig;
+  let mockDate;
+  
+  beforeEach(() => {
+      // Set up base test date to a non-restricted time
+      mockDate = new Date('2024-01-15T21:00:00.000Z'); // 9 PM
+      jest.spyOn(Date, 'now').mockReturnValue(mockDate.getTime());
+      
+      // Create base price data for 3 hours
+      const priceData = Array.from({ length: 3 }).map((_, i) => ({
+          importPrice: 1 + Math.sin(i * Math.PI / 2), // Creates price variation
+          exportPrice: (1 + Math.sin(i * Math.PI / 2)) * 0.5,
+          start: new Date(mockDate.getTime() + i * 60 * 60 * 1000).toString()
+      }));
+      
+      // Base configuration
+      baseConfig = {
+          priceData,
+          populationSize: 100,
+          numberOfPricePeriods: 4,
+          generations: 100,
+          mutationRate: 0.03,
+          batteryMaxEnergy: 13.5,
+          batteryMaxOutputPower: 5,
+          batteryMaxInputPower: 5,
+          soc: 50,
+          productionForecast: priceData.map(v => ({ start: v.start, value: 0 })),
+          consumptionForecast: priceData.map(v => ({ start: v.start, value: 1 })),
+          evChargingEnabled: true,
+          evMaxChargingPower: 11,
+          ev_soc: 30,
+          ev_limit: 80
+      };
+  });
+
+  test('should generate separate schedules for EV and home battery', () => {
+      const strategy = calculateBatteryChargingStrategy(baseConfig);
+      
+      const evPeriods = strategy.best.schedule.filter(p => p.name === 'charging_ev');
+      const batteryPeriods = strategy.best.schedule.filter(p => p.name === 'charging_battery');
+      
+      expect(evPeriods.length).toBeGreaterThan(0);
+      expect(batteryPeriods.length).toBeGreaterThan(0);
+  });
+
+  test('should not schedule EV charging when disabled', () => {
+      const config = {
+          ...baseConfig,
+          evChargingEnabled: false
+      };
+      
+      const strategy = calculateBatteryChargingStrategy(config);
+      const evPeriods = strategy.best.schedule.filter(p => p.name === 'charging_ev');
+      
+      expect(evPeriods.length).toBe(0);
+  });
+
+  test('should respect charging restrictions for both EV and battery', () => {
+      // Set date to winter (when restrictions apply)
+      const winterDate = new Date('2024-01-15T12:00:00.000Z'); // Noon, should be restricted
+      jest.spyOn(Date, 'now').mockReturnValue(winterDate.getTime());
+      
+      const config = {
+          ...baseConfig,
+          chargingRestrictions: {
+              startDate: "11-01",
+              endDate: "03-31",
+              startTime: "07:00",
+              endTime: "20:00",
+              allowWeekends: false
+          },
+          // Update price data for new time
+          priceData: Array.from({ length: 3 }).map((_, i) => ({
+              importPrice: 1 + Math.sin(i * Math.PI / 2),
+              exportPrice: (1 + Math.sin(i * Math.PI / 2)) * 0.5,
+              start: new Date(winterDate.getTime() + i * 60 * 60 * 1000).toString()
+          }))
+      };
+      
+      const strategy = calculateBatteryChargingStrategy(config);
+      
+      const restrictedPeriods = strategy.best.schedule.filter(p => 
+          (p.name === 'charging_ev' || p.name === 'charging_battery') &&
+          new Date(p.start).getHours() >= 7 &&
+          new Date(p.start).getHours() < 20
+      );
+      
+      expect(restrictedPeriods.length).toBe(0);
+  });
+
+  test('should prioritize charging during low price periods', () => {
+    // Set up test time
+    const mockDate = new Date('2024-01-15T21:00:00.000Z'); // 9 PM
+    jest.spyOn(Date, 'now').mockReturnValue(mockDate.getTime());
+    
+    // Create more extreme price differences to make optimization more obvious
+    const priceData = [
+        { importPrice: 0.1, exportPrice: 0.05, start: mockDate.toString() },
+        { importPrice: 5.0, exportPrice: 2.50, start: new Date(mockDate.getTime() + 60 * 60 * 1000).toString() },
+        { importPrice: 0.2, exportPrice: 0.10, start: new Date(mockDate.getTime() + 60 * 60 * 1000 * 2).toString() }
+    ];
+    
+    const config = {
+        ...baseConfig,
+        priceData,
+        populationSize: 150,
+        numberOfPricePeriods: 4,
+        generations: 250,
+        soc: 20,
+        ev_soc: 20,
+        productionForecast: priceData.map(v => ({ start: v.start, value: 0 })),
+        consumptionForecast: priceData.map(v => ({ start: v.start, value: 1 }))
+    };
+    
+    const strategy = calculateBatteryChargingStrategy(config);
+    
+    console.log('Complete schedule:', strategy.best.schedule);
+    
+    let cheapChargingMinutes = 0;
+    let expensiveChargingMinutes = 0;
+    
+    strategy.best.schedule.forEach(period => {
+        if (period.name === 'charging_ev' || period.name === 'charging_battery') {
+            const periodStart = new Date(period.start);
+            const hourDiff = (periodStart.getTime() - mockDate.getTime()) / (60 * 60 * 1000);
+            const priceIndex = Math.floor(hourDiff);
+            
+            console.log('Charging period:', {
+                name: period.name,
+                start: periodStart.toISOString(),
+                priceIndex,
+                price: priceData[priceIndex]?.importPrice,
+                duration: period.duration
+            });
+            
+            if (priceIndex >= 0 && priceIndex < priceData.length) {
+                if (priceData[priceIndex].importPrice < 1.0) {
+                    cheapChargingMinutes += period.duration;
+                } else {
+                    expensiveChargingMinutes += period.duration;
+                }
+            }
+        }
+    });
+    
+    console.log('Charging minutes in cheap periods:', cheapChargingMinutes);
+    console.log('Charging minutes in expensive periods:', expensiveChargingMinutes);
+    console.log('Strategy cost:', strategy.best.cost);
+    
+    // Ensure we have some charging
+    expect(cheapChargingMinutes + expensiveChargingMinutes).toBeGreaterThan(0);
+    // Should have significantly more charging during cheap times
+    expect(cheapChargingMinutes).toBeGreaterThan(expensiveChargingMinutes * 2);
+});
 });

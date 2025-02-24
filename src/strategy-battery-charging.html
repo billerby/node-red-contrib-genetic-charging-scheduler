@@ -7,6 +7,10 @@
         }
     }
 
+    function toggleEVFields(enabled) {
+        $('.ev-field').prop('disabled', !enabled);
+    }
+
     RED.nodes.registerType('enell-strategy-genetic-charging-seasonal', {
         category: 'Power Saver',
         color: '#a6bbcf',
@@ -93,6 +97,25 @@
                 value: true,
                 required: false
             },
+            // EV Configuration
+            evChargingEnabled: {
+                value: false,
+                required: false
+            },
+            evMaxChargingCurrent: {
+                value: 6,
+                required: false,
+                validate: RED.validators.number()
+            },
+            evVoltage: {
+                value: 230,
+                required: false,
+                validate: RED.validators.number()
+            },
+            evPhases: {
+                value: "3",
+                required: false
+            }
         },
         inputs: 1,
         outputs: 1,
@@ -109,6 +132,14 @@
             // Add change handler
             $('#node-input-restrictChargingEnabled').on('change', function() {
                 $('.restriction-field').prop('disabled', !this.checked);
+            });
+
+            // Add EV fields handling
+            var evEnabled = $('#node-input-evChargingEnabled').is(':checked');
+            toggleEVFields(evEnabled);
+            
+            $('#node-input-evChargingEnabled').on('change', function() {
+                toggleEVFields(this.checked);
             });
         }
     });
@@ -187,6 +218,35 @@
         <input type="checkbox" id="node-input-allowWeekends" class="restriction-field" style="width: auto;" title="When checked, allows charging during weekends regardless of time restrictions"/>
         <span class="restriction-field" style="vertical-align: middle; margin-left: 5px;">Allow charging during weekends</span>
     </div>    
+
+    <div class="form-row">
+        <label for="node-input-evChargingEnabled" style="width: 240px;">Enable EV charging</label>
+        <div style="display: inline-block; vertical-align: middle;">
+            <input type="checkbox" id="node-input-evChargingEnabled" style="width: auto; margin-right: 5px; vertical-align: middle;" onchange="toggleEVFields(this.checked)"/>
+            <span style="vertical-align: middle;">Enable electric vehicle charging schedule</span>
+        </div>
+    </div>
+    
+    <div class="form-section ev-field">
+        <h3>Electric Vehicle Settings</h3>
+        <div class="form-row">
+            <label for="node-input-evMaxChargingCurrent" style="width: 240px">Max charging current (A)</label>
+            <input type="text" id="node-input-evMaxChargingCurrent" class="ev-field"/>
+        </div>
+        
+        <div class="form-row">
+            <label for="node-input-evVoltage" style="width: 240px">Charging voltage (V)</label>
+            <input type="text" id="node-input-evVoltage" class="ev-field"/>
+        </div>
+    
+        <div class="form-row">
+            <label for="node-input-evPhases" style="width: 240px">Number of phases</label>
+            <select id="node-input-evPhases" class="ev-field">
+                <option value="1">Single phase</option>
+                <option value="3">Three phase</option>
+            </select>
+        </div>
+    </div>    
     
 </script>
 
@@ -199,4 +259,14 @@
         background-color: #f5f5f5;
         color: #999;
     }
+    .ev-field[disabled] {
+        background-color: #f5f5f5;
+        color: #999;
+    }
+    
+    .form-section {
+        margin-top: 20px;
+        padding-top: 10px;
+        border-top: 1px solid #eee;
+    }    
 </style>
