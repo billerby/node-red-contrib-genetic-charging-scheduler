@@ -12,6 +12,8 @@ const node = (RED) => {
         allowWeekends: config.allowWeekends,
         evChargingEnabled: config.evChargingEnabled
       });
+      
+      // Extract all configuration parameters
       const {
         populationSize,
         numberOfPricePeriods,
@@ -38,7 +40,7 @@ const node = (RED) => {
         const priceData = msg.payload?.priceData ?? []
         const consumptionForecast = msg.payload?.consumptionForecast ?? []
         const productionForecast = msg.payload?.productionForecast ?? []
-        const soc = msg.payload?.soc
+        const soc = msg.payload?.soc ?? 0
         
         // Get EV data from message payload or use defaults
         const ev_soc = msg.payload?.ev_soc ?? 50
@@ -46,7 +48,32 @@ const node = (RED) => {
         
         // Calculate EV max charging power based on current, voltage and phases
         const evMaxChargingPower = evChargingEnabled ? 
-          (parseFloat(evMaxChargingCurrent) * parseFloat(evVoltage) * parseInt(evPhases, 10)) / 1000 : 0
+          (parseFloat(evMaxChargingCurrent || 6) * parseFloat(evVoltage || 230) * 
+           parseInt(evPhases || "1", 10)) / 1000 : 0
+           
+        console.log('EV Charging Settings:', {
+          enabled: Boolean(evChargingEnabled),
+          current: evMaxChargingCurrent,
+          voltage: evVoltage,
+          phases: evPhases,
+          maxPower: evMaxChargingPower,
+          soc: ev_soc,
+          limit: ev_limit
+        });
+        
+        // Calculate max EV charging time in minutes - to prevent excessively long charging periods
+        // Based on the capacity still available to charge and the charging power
+        const evCapacityKWh = msg.payload?.ev_capacity || 60; // Default to 60 kWh if not provided
+        const evAvailableCapacityKWh = (ev_limit - ev_soc) * evCapacityKWh / 100;
+        const evMaxChargingTimeMinutes = evMaxChargingPower > 0 ? 
+          Math.ceil((evAvailableCapacityKWh / evMaxChargingPower) * 60) : 0;
+        
+        console.log('EV Charging Time Calculation:', {
+          capacityKWh: evCapacityKWh,
+          availableCapacityKWh: evAvailableCapacityKWh,
+          maxChargingPower: evMaxChargingPower,
+          maxChargingTimeMinutes: evMaxChargingTimeMinutes
+        });
 
         const strategy = calculateBatteryChargingStrategy({
           priceData,
@@ -76,7 +103,9 @@ const node = (RED) => {
           evChargingEnabled: Boolean(evChargingEnabled),
           evMaxChargingPower,
           ev_soc,
-          ev_limit
+          ev_limit,
+          evCapacityKWh,
+          evMaxChargingTimeMinutes
         })
 
         const payload = msg.payload ?? {}

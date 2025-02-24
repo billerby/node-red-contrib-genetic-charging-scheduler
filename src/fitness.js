@@ -7,7 +7,8 @@ function* splitIntoHourIntervalsGenerator(seed, props) {
     let splitDuration = Math.min(60 - (start % 60), remainingDuration);
     
     // If charging restrictions are enabled, check for restriction boundaries
-    if (props?.chargingRestrictions && seed.activity === 1) {
+    // Apply to both battery (activity 1) and EV (activity 2) charging
+    if (props?.chargingRestrictions && (seed.activity === 1 || seed.activity === 2)) {
       const baseDate = new Date(props.input[0].start);
       const periodDate = new Date(baseDate);
       periodDate.setMinutes(periodDate.getMinutes() + start);
@@ -27,6 +28,15 @@ function* splitIntoHourIntervalsGenerator(seed, props) {
             }
           }
         }
+      }
+    }
+    
+    // Special handling for EV charging to enforce maximum charging time
+    if (seed.activity === 2 && props?.evMaxChargingTimeMinutes) {
+      // If this would exceed the max EV charging time, limit it
+      if (start - seed.start + splitDuration > props.evMaxChargingTimeMinutes) {
+        splitDuration = Math.max(0, props.evMaxChargingTimeMinutes - (start - seed.start));
+        if (splitDuration <= 0) break; // Stop if we've reached maximum charging time
       }
     }
     
@@ -179,54 +189,74 @@ const calculatePeriodScore = (props, period, excessPvEnergyUse, _currentCharge) 
       evChargingEnabled,
       evMaxChargingPower,
       ev_soc,
-      ev_limit
+      ev_limit,
+      evMaxChargingTimeMinutes
   } = props;
 
   // Check charging restrictions for both EV and home battery charging
   if ((period.activity === 1 || period.activity === 2) && chargingRestrictions) {
       const baseDate = new Date(input[0].start);
-      const periodStart = new Date(baseDate);
-      periodStart.setMinutes(periodStart.getMinutes() + period.start);
       
-      if (!isChargingAllowed(periodStart, chargingRestrictions)) {
-          return [1000000, 0];
-      }
+      // Check more thoroughly - sample multiple points within the period
+      const periodLengthMinutes = period.duration;
+      const samplingInterval = Math.min(30, periodLengthMinutes); // Check every 30 minutes or at period end
       
-      const periodEnd = new Date(periodStart);
-      periodEnd.setMinutes(periodEnd.getMinutes() + period.duration);
-      if (!isChargingAllowed(periodEnd, chargingRestrictions)) {
-          return [1000000, 0];
+      for (let minute = 0; minute <= periodLengthMinutes; minute += samplingInterval) {
+          const checkPoint = new Date(baseDate);
+          checkPoint.setMinutes(checkPoint.getMinutes() + period.start + minute);
+          
+          if (!isChargingAllowed(checkPoint, chargingRestrictions)) {
+              return [1000000, 0]; // Extremely high cost to prevent selection
+          }
       }
   }
 
   // Check if this is an EV charging period
   if (period.activity === 2) {
       if (!evChargingEnabled || ev_soc >= ev_limit) {
-          return [1000000, 0];
+          return [1000000, 0]; // Extremely high cost to prevent selection
+      }
+      
+      // Apply EV charging time limit if configured
+      if (evMaxChargingTimeMinutes && period.duration > evMaxChargingTimeMinutes) {
+          // If period is longer than necessary, apply a penalty
+          return [1000000, 0]; // Extremely high cost to prevent selection
       }
 
       let cost = 0;
       let evCharge = 0;
 
       for (const interval of splitIntoHourIntervals(period)) {
-          const duration = interval.duration / 60;
+          const duration = interval.duration / 60; // Convert minutes to hours
+          
+          // Limit charge amount based on available capacity and charging power
           const maxCharge = Math.min(
               evMaxChargingPower * duration,
               ev_limit - ev_soc
           );
 
           const hourIndex = Math.floor(interval.start / 60);
+          if (hourIndex >= input.length) {
+              // Safety check for index out of bounds
+              continue;
+          }
+          
           const { importPrice, exportPrice, consumption, production } = input[hourIndex];
 
           const consumedFromProduction = Math.min(consumption, production);
           const evChargeFromProduction = Math.min(production - consumedFromProduction, maxCharge);
           const evChargeFromGrid = maxCharge - evChargeFromProduction;
           
-          // Price multiplier only for EV charging
+          // Price multiplier only for EV charging - adjust to make algorithm prioritize EV charging
+          // at good times but not create excessively long periods
           const evPriceMultiplier = importPrice <= 1.0 ? 0.5 : 2.0;
           cost += evChargeFromGrid * importPrice * evPriceMultiplier;
           evCharge += maxCharge;
       }
+
+      // Apply slight penalty for very long charging sessions to prevent unnecessary duration
+      const durationPenalty = Math.max(0, period.duration - 120) * 0.001; // Gentle penalty after 2 hours
+      cost += durationPenalty;
 
       return [cost, evCharge];
   }
@@ -247,6 +277,11 @@ const calculatePeriodScore = (props, period, excessPvEnergyUse, _currentCharge) 
       );
 
       const hourIndex = Math.floor(interval.start / 60);
+      if (hourIndex >= input.length) {
+          // Safety check for index out of bounds
+          continue;
+      }
+      
       const { importPrice, exportPrice, consumption, production } = input[hourIndex];
 
       const v = calculateIntervalScore({
