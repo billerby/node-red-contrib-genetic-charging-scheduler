@@ -1,4 +1,4 @@
-const { generateRandomActivity } = require('./utils');
+const { generateRandomActivity, isChargingAllowed } = require('./utils');
 const { DoublyLinkedList } = require('./schedule');
 
 const populationFunction = (props) => {
@@ -6,7 +6,9 @@ const populationFunction = (props) => {
     totalDuration,
     populationSize,
     numberOfPricePeriods,
-    excessPvEnergyUse,
+    excessPvEnergyUse = 0,
+    input = [],
+    chargingRestrictions
   } = props;
 
   const population = [];
@@ -15,8 +17,22 @@ const populationFunction = (props) => {
     const activities = [];
     let currentNumberOfPricePeriods = 0;
     let previousActivity = undefined;
+
     while (currentNumberOfPricePeriods < numberOfPricePeriods) {
-      const activity = generateRandomActivity(previousActivity);
+      // Use the input start time if available, otherwise use current time
+      const baseDate = input[0]?.start ? new Date(input[0].start) : new Date();
+      const periodStart = new Date(baseDate);
+      periodStart.setMinutes(periodStart.getMinutes() + currentNumberOfPricePeriods * 30);
+      
+      let activity;
+      if (!isChargingAllowed(periodStart, chargingRestrictions)) {
+        // During restricted hours, only allow discharge or idle
+        activity = generateRandomActivity(previousActivity);
+        if (activity === 1) activity = Math.random() < 0.5 ? -1 : 0;
+      } else {
+        activity = generateRandomActivity(previousActivity);
+      }
+      
       currentNumberOfPricePeriods += activity != 0;
       activities.push(activity);
       previousActivity = activity;
@@ -35,7 +51,7 @@ const populationFunction = (props) => {
 
     population.push({
       periods: timePeriods,
-      excessPvEnergyUse: excessPvEnergyUse,
+      excessPvEnergyUse,
     });
   }
   return population;

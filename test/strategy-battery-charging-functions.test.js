@@ -20,19 +20,23 @@ const random = () => {
 describe('Calculate', () => {
   test('calculate', () => {
     jest.spyOn(Math, 'random').mockImplementation(random);
-    let now = Date.now();
-    now = now - (now % (60 * 60 * 1000));
+    
+    // Set the date to a time when charging is allowed (e.g., 21:00)
+    const now = new Date();
+    now.setHours(21, 0, 0, 0);
+    now.setTime(now.getTime() - (now.getTime() % (60 * 60 * 1000)));
+    
     const priceData = [
       { importPrice: 1, exportPrice: 0, start: new Date(now).toString() },
       {
         importPrice: 500,
         exportPrice: 0,
-        start: new Date(now + 60 * 60 * 1000).toString(),
+        start: new Date(now.getTime() + 60 * 60 * 1000).toString(),
       },
       {
         importPrice: 500,
         exportPrice: 0,
-        start: new Date(now + 60 * 60 * 1000 * 2).toString(),
+        start: new Date(now.getTime() + 60 * 60 * 1000 * 2).toString(),
       },
     ];
     const productionForecast = priceData.map((v) => {
@@ -93,47 +97,6 @@ describe('Calculate', () => {
 
     console.log(`best: ${strategy.best.cost}`);
     console.log(`no battery: ${strategy.noBattery.cost}`);
-
-    const values = bestSchedule
-      .filter((e) => e.activity != 0)
-      .reduce((total, e) => {
-        const toTimeString = (date) => {
-          const HH = date.getHours().toString().padStart(2, '0');
-          const mm = date.getMinutes().toString().padStart(2, '0');
-          return `${HH}:${mm}`;
-        };
-
-        const touPattern = (start, end, charge) => {
-          let pattern = toTimeString(start);
-          pattern += '-';
-          pattern += toTimeString(end);
-          pattern += '/';
-          pattern += start.getDay();
-          pattern += '/';
-          pattern += charge;
-          return pattern;
-        };
-
-        const startDate = new Date(e.start);
-        const endDate = new Date(
-          startDate.getTime() + (e.duration - 1) * 60000
-        );
-        const charge = e.activity == 1 ? '+' : '-';
-        if (startDate.getDay() == endDate.getDay()) {
-          total.push(touPattern(startDate, endDate, charge));
-        } else {
-          const endDateDay1 = new Date(startDate);
-          endDateDay1.setHours(23);
-          endDateDay1.setMinutes(59);
-          total.push(touPattern(startDate, endDateDay1, charge));
-
-          const startDateDay2 = new Date(endDate);
-          startDateDay2.setHours(0);
-          startDateDay2.setMinutes(0);
-          total.push(touPattern(startDateDay2, endDate, charge));
-        }
-        return total;
-      }, []);
   });
 
   test('calculate overlapping', () => {
@@ -177,5 +140,137 @@ describe('Calculate', () => {
         startTime(strategy.best.schedule[i]).unix()
       );
     }
+  });
+});
+
+describe('Charging Time Restrictions', () => {
+  test('should not allow charging during power fee hours in winter', () => {
+    // Set date to January 1st at 12:00 (middle of the day during power fee season)
+    const winterNoon = new Date('2024-01-01T12:00:00.000Z');
+    jest.spyOn(Date, 'now').mockReturnValue(winterNoon.getTime());
+    
+    const priceData = [
+      { importPrice: 1, exportPrice: 0, start: winterNoon.toString() },
+      { 
+        importPrice: 500, 
+        exportPrice: 0, 
+        start: new Date(winterNoon.getTime() + 60 * 60 * 1000).toString() 
+      }
+    ];
+    
+    const config = {
+      priceData,
+      populationSize: 100,
+      numberOfPricePeriods: 2,
+      generations: 100,
+      mutationRate: 0.03,
+      batteryMaxEnergy: 3,
+      batteryMaxOutputPower: 3,
+      batteryMaxInputPower: 3,
+      productionForecast: priceData.map(v => ({ start: v.start, value: 0 })),
+      consumptionForecast: priceData.map(v => ({ start: v.start, value: 1.5 })),
+      soc: 0,
+      excessPvEnergyUse: 0,
+      // Add charging restrictions configuration
+      chargingRestrictions: {
+        startDate: "11-01",    // November 1st
+        endDate: "03-31",      // March 31st
+        startTime: "07:00",    // 7 AM
+        endTime: "20:00"       // 8 PM
+      }
+    };
+
+    const strategy = calculateBatteryChargingStrategy(config);
+    
+    // Check that no charging periods exist during restricted hours
+    const chargingPeriods = strategy.best.schedule.filter(period => period.activity === 1);
+    expect(chargingPeriods.length).toBe(0);
+  });
+
+  test('should allow charging during non-power fee hours in winter', () => {
+    // Set date to January 1st at 22:00 (evening, outside power fee hours)
+    const winterEvening = new Date('2024-01-01T22:00:00.000Z');
+    jest.spyOn(Date, 'now').mockReturnValue(winterEvening.getTime());
+    
+    const priceData = [
+      { importPrice: 1, exportPrice: 0, start: winterEvening.toString() },
+      { 
+        importPrice: 500, 
+        exportPrice: 0, 
+        start: new Date(winterEvening.getTime() + 60 * 60 * 1000).toString() 
+      }
+    ];
+    
+    const config = {
+      priceData,
+      populationSize: 100,
+      numberOfPricePeriods: 2,
+      generations: 100,
+      mutationRate: 0.03,
+      batteryMaxEnergy: 3,
+      batteryMaxOutputPower: 3,
+      batteryMaxInputPower: 3,
+      productionForecast: priceData.map(v => ({ start: v.start, value: 0 })),
+      consumptionForecast: priceData.map(v => ({ start: v.start, value: 1.5 })),
+      soc: 0,
+      excessPvEnergyUse: 0,
+      // Add charging restrictions configuration
+      chargingRestrictions: {
+        startDate: "11-01",    // November 1st
+        endDate: "03-31",      // March 31st
+        startTime: "07:00",    // 7 AM
+        endTime: "20:00"       // 8 PM
+      }
+    };
+
+    const strategy = calculateBatteryChargingStrategy(config);
+    
+    // Verify that charging is allowed during these hours
+    const chargingPeriods = strategy.best.schedule.filter(period => period.activity === 1);
+    expect(chargingPeriods.length).toBeGreaterThan(0);
+  });
+
+  test('should allow charging any time during summer', () => {
+    // Set date to July 1st at 12:00 (middle of the day during summer)
+    const summerNoon = new Date('2024-07-01T12:00:00.000Z');
+    jest.spyOn(Date, 'now').mockReturnValue(summerNoon.getTime());
+    
+    const priceData = [
+      { importPrice: 1, exportPrice: 0, start: summerNoon.toString() },
+      { 
+        importPrice: 500, 
+        exportPrice: 0, 
+        start: new Date(summerNoon.getTime() + 60 * 60 * 1000).toString() 
+      }
+    ];
+    
+    const config = {
+      priceData,
+      populationSize: 100,
+      numberOfPricePeriods: 2,
+      generations: 100,
+      mutationRate: 0.03,
+      batteryMaxEnergy: 3,
+      batteryMaxOutputPower: 3,
+      batteryMaxInputPower: 3,
+      productionForecast: priceData.map(v => ({ start: v.start, value: 0 })),
+      consumptionForecast: priceData.map(v => ({ start: v.start, value: 1.5 })),
+      soc: 0,
+      excessPvEnergyUse: 0,
+      // Add charging restrictions configuration - even with restrictions,
+      // summer dates should allow charging
+      chargingRestrictions: {
+        startDate: "11-01",    // November 1st
+        endDate: "03-31",      // March 31st
+        startTime: "07:00",    // 7 AM
+        endTime: "20:00"       // 8 PM
+      }
+    };
+
+    const strategy = calculateBatteryChargingStrategy(config);
+    
+    // Verify that charging is allowed during summer days
+    const chargingPeriods = strategy.best.schedule.filter(period => period.activity === 1);
+    expect(chargingPeriods.length).toBeGreaterThan(0);
   });
 });

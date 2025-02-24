@@ -10,7 +10,7 @@ describe('Battery charging strategy Node', () => {
     const flow = [
       {
         id: 'n1',
-        type: 'enell-strategy-genetic-charging',
+        type: 'enell-strategy-genetic-charging-seasonal',
         name: 'test name',
       },
     ]
@@ -26,7 +26,7 @@ describe('Battery charging strategy Node', () => {
     const flow = [
       {
         id: 'n1',
-        type: 'enell-strategy-genetic-charging',
+        type: 'enell-strategy-genetic-charging-seasonal',
         name: 'test name',
         populationSize: 10,
         numberOfPricePeriods: 3,
@@ -77,7 +77,7 @@ describe('Battery charging strategy Node', () => {
     const flow = [
       {
         id: 'n1',
-        type: 'enell-strategy-genetic-charging',
+        type: 'enell-strategy-genetic-charging-seasonal',
         name: 'test name',
         populationSize: 10,
         numberOfPricePeriods: 3,
@@ -213,7 +213,7 @@ describe('Battery charging strategy Node', () => {
     const flow = [
       {
         id: 'n1',
-        type: 'enell-strategy-genetic-charging',
+        type: 'enell-strategy-genetic-charging-seasonal',
         name: 'test name',
         wires: [['n2']],
       },
