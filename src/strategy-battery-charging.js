@@ -9,7 +9,8 @@ const node = (RED) => {
       RED.nodes.createNode(this, config)
       console.log('Node config received:', {
         restrictChargingEnabled: config.restrictChargingEnabled,
-        allowWeekends: config.allowWeekends
+        allowWeekends: config.allowWeekends,
+        evChargingEnabled: config.evChargingEnabled
       });
       const {
         populationSize,
@@ -18,12 +19,19 @@ const node = (RED) => {
         mutationRate,
         batteryMaxEnergy,
         batteryMaxInputPower,
+        batteryMaxOutputPower = batteryMaxInputPower, // Default to input power if not specified
         averageConsumption,
         restrictChargingEnabled,
         restrictionStartDate,
         restrictionEndDate,
         restrictionStartTime,
-        restrictionEndTime
+        restrictionEndTime,
+        allowWeekends,
+        // Extract EV configuration params
+        evChargingEnabled,
+        evMaxChargingCurrent,
+        evVoltage,
+        evPhases
       } = config
 
       this.on('input', async (msg, send, done) => {
@@ -31,6 +39,14 @@ const node = (RED) => {
         const consumptionForecast = msg.payload?.consumptionForecast ?? []
         const productionForecast = msg.payload?.productionForecast ?? []
         const soc = msg.payload?.soc
+        
+        // Get EV data from message payload or use defaults
+        const ev_soc = msg.payload?.ev_soc ?? 50
+        const ev_limit = msg.payload?.ev_limit ?? 80
+        
+        // Calculate EV max charging power based on current, voltage and phases
+        const evMaxChargingPower = evChargingEnabled ? 
+          (parseFloat(evMaxChargingCurrent) * parseFloat(evVoltage) * parseInt(evPhases, 10)) / 1000 : 0
 
         const strategy = calculateBatteryChargingStrategy({
           priceData,
@@ -41,7 +57,7 @@ const node = (RED) => {
           generations,
           mutationRate: mutationRate / 100,
           batteryMaxEnergy,
-          batteryMaxOutputPower: batteryMaxInputPower,
+          batteryMaxOutputPower,
           batteryMaxInputPower,
           averageConsumption,
           consumptionForecast,
@@ -54,8 +70,13 @@ const node = (RED) => {
             endDate: restrictionEndDate,        // "MM-DD" format
             startTime: restrictionStartTime,    // "HH:mm" format
             endTime: restrictionEndTime,        // "HH:mm" format
-            allowWeekends: config.allowWeekends // boolean
-          } : null
+            allowWeekends                       // boolean
+          } : null,
+          // Add EV charging configuration
+          evChargingEnabled: Boolean(evChargingEnabled),
+          evMaxChargingPower,
+          ev_soc,
+          ev_limit
         })
 
         const payload = msg.payload ?? {}

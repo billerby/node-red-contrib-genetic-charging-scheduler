@@ -90,7 +90,15 @@ const mergeInput = (config) => {
 };
 
 const calculateBatteryChargingStrategy = (config) => {
-  const { generations, chargingRestrictions } = config;
+  // Extract ALL configuration values, including EV-related ones
+  const { 
+    generations, 
+    chargingRestrictions, 
+    evChargingEnabled, 
+    evMaxChargingPower, 
+    ev_soc, 
+    ev_limit 
+  } = config;
 
   const input = mergeInput(config);
   if (input === undefined || input.length === 0) return {};
@@ -100,6 +108,11 @@ const calculateBatteryChargingStrategy = (config) => {
     input,
     totalDuration: input.length * 60,
     chargingRestrictions,
+    // Explicitly include EV properties in props
+    evChargingEnabled: Boolean(evChargingEnabled),
+    evMaxChargingPower: evMaxChargingPower || 0,
+    ev_soc: ev_soc || 0,
+    ev_limit: ev_limit || 100,
   };
 
   const options = {
