@@ -1,6 +1,10 @@
 const { generateRandomActivity, isChargingAllowed } = require('./utils');
 const { DoublyLinkedList } = require('./schedule');
 
+/**
+ * Generate initial population for the genetic algorithm
+ * Now with improved handling of charging restrictions
+ */
 const populationFunction = (props) => {
   const {
     totalDuration,
@@ -24,14 +28,8 @@ const populationFunction = (props) => {
       const periodStart = new Date(baseDate);
       periodStart.setMinutes(periodStart.getMinutes() + currentNumberOfPricePeriods * 30);
       
-      let activity;
-      if (!isChargingAllowed(periodStart, chargingRestrictions)) {
-        // During restricted hours, only allow discharge or idle
-        activity = generateRandomActivity(previousActivity);
-        if (activity === 1) activity = Math.random() < 0.5 ? -1 : 0;
-      } else {
-        activity = generateRandomActivity(previousActivity);
-      }
+      // Use the enhanced generateRandomActivity that is aware of charging restrictions
+      const activity = generateRandomActivity(previousActivity, periodStart, chargingRestrictions);
       
       currentNumberOfPricePeriods += activity != 0;
       activities.push(activity);

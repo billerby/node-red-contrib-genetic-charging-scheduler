@@ -1,5 +1,9 @@
 const { generateRandomActivity, random, isChargingAllowed } = require('./utils');
 
+/**
+ * Mutation function for the genetic algorithm
+ * Now with improved handling of charging restrictions
+ */
 const mutationFunction = (props) => (phenotype) => {
   const { totalDuration, mutationRate, input = [], chargingRestrictions } = props;
 
@@ -16,14 +20,8 @@ const mutationFunction = (props) => (phenotype) => {
         const periodStart = new Date(baseDate);
         periodStart.setMinutes(periodStart.getMinutes() + gene.start);
         
-        // When mutating to charging (1), check if it's allowed at this time
-        const newActivity = generateRandomActivity(gene.activity);
-        if (newActivity === 1 && !isChargingAllowed(periodStart, chargingRestrictions)) {
-          // If charging isn't allowed, either keep current activity or set to discharge/idle
-          g.activity = Math.random() < 0.5 ? gene.activity : (Math.random() < 0.5 ? -1 : 0);
-        } else {
-          g.activity = newActivity;
-        }
+        // Use the enhanced generateRandomActivity that is aware of charging restrictions
+        g.activity = generateRandomActivity(gene.activity, periodStart, chargingRestrictions);
       }
 
       if (gene.start > 0 && Math.random() < mutationRate) {

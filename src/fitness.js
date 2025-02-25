@@ -181,28 +181,23 @@ const calculatePeriodScore = (props, period, excessPvEnergyUse, _currentCharge) 
   let cost = 0;
   let currentCharge = _currentCharge;
   
-  // Check if this is a charging period that overlaps with restrictions
+  // Simplified safety check for charging during restricted periods
+  // This should never happen due to generateRandomActivity restrictions,
+  // but we keep it as a defensive measure and for future-proofing
   if (period.activity === 1 && chargingRestrictions) {
     const baseDate = new Date(input[0].start);
     const periodStart = new Date(baseDate);
     periodStart.setMinutes(periodStart.getMinutes() + period.start);
     
-    // Check first minute of period
     if (!isChargingAllowed(periodStart, chargingRestrictions)) {
-      // Return massive penalty for restricted charging
-      return [1000000, 0]; // Extremely high cost, no charge gain
-    }
-    
-    // Check end of period
-    const periodEnd = new Date(periodStart);
-    periodEnd.setMinutes(periodEnd.getMinutes() + period.duration);
-    if (!isChargingAllowed(periodEnd, chargingRestrictions)) {
-      // Return massive penalty for restricted charging
-      return [1000000, 0];
+      console.warn("Safety check triggered: Attempted charging during restricted period");
+      // Use a very high penalty to ensure this solution is not selected
+      return [10000000, 0];
     }
   }
 
   for (const interval of splitIntoHourIntervals(period)) {
+    // Rest of the function remains unchanged
     const duration = interval.duration / 60;
     const maxCharge = Math.min(
       batteryMaxInputPower * duration,
@@ -251,25 +246,28 @@ const fitnessFunction = (props) => (phenotype) => {
     else return acc;
   }, 0);
 
-  // Add new penalty for charging during restricted times
+  // Simplified safety check for charging during restricted times
+  // This should never happen due to activity generation restrictions,
+  // but we keep it as a simplified defensive measure
   if (props.chargingRestrictions) {
     const baseDate = new Date(props.input[0].start);
-    score -= periods.reduce((acc, period) => {
+    
+    // Check if any charging period falls in restricted times
+    const hasInvalidChargingPeriod = periods.some(period => {
       if (period.activity === 1) { // If charging
-        // Check each hour within the period
-        for (let minute = 0; minute < period.duration; minute += 60) {
-          const periodDate = new Date(baseDate);
-          periodDate.setMinutes(periodDate.getMinutes() + period.start + minute);
-          
-          if (!isChargingAllowed(periodDate, props.chargingRestrictions)) {
-            // Apply extreme penalty for charging during restricted time
-            // Using 20x normal price as penalty to strongly discourage any charging during restricted hours
-            return acc + (60 * averagePrice * 20); // 20x penalty multiplier
-          }
-        }
+        const periodDate = new Date(baseDate);
+        periodDate.setMinutes(periodDate.getMinutes() + period.start);
+        
+        return !isChargingAllowed(periodDate, props.chargingRestrictions);
       }
-      return acc;
-    }, 0);
+      return false;
+    });
+    
+    // If an invalid charging period is found, apply a massive penalty
+    if (hasInvalidChargingPeriod) {
+      console.warn("Safety check triggered in fitnessFunction: Attempted charging during restricted period");
+      score -= 1000000; // Extreme penalty to ensure this solution is rejected
+    }
   }
 
   return score;

@@ -2,7 +2,30 @@ const random = (min, max) => {
   return Math.floor(Math.random() * (max - min) + min);
 };
 
-const generateRandomActivity = (excludedValue) => {
+/**
+ * Generates a random activity value (-1, 0, 1) different from the excluded value.
+ * Now with support for charging restrictions.
+ * 
+ * @param {number} excludedValue - The activity value to exclude
+ * @param {Date|null} currentDate - The date to check for charging restrictions
+ * @param {Object|null} chargingRestrictions - The charging restrictions configuration
+ * @returns {number} A randomly selected activity value
+ */
+const generateRandomActivity = (excludedValue, currentDate = null, chargingRestrictions = null) => {
+  // If we have a date and restrictions, and charging is not allowed at this time
+  if (currentDate && chargingRestrictions && !isChargingAllowed(currentDate, chargingRestrictions)) {
+    // Filter out both the excluded value and charging (1)
+    const allowedValues = [-1, 0].filter(val => val !== excludedValue);
+    // If there's only one valid activity left, return it
+    if (allowedValues.length === 1) {
+      return allowedValues[0];
+    }
+    // Otherwise randomly select from the allowed values
+    const randomIndex = Math.floor(Math.random() * allowedValues.length);
+    return allowedValues[randomIndex];
+  }
+
+  // Standard behavior when no restrictions apply
   const randomArray = [-1, 0, 1].filter((val) => val !== excludedValue);
   const randomIndex = Math.floor(Math.random() * randomArray.length);
   return randomArray[randomIndex];
