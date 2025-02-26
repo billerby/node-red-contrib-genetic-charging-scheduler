@@ -62,8 +62,16 @@ const mergeInput = (config) => {
     productionForecast,
   } = config;
 
-  let now = Date.now();
-  now = new Date(now - (now % (60 * 60 * 1000)));
+  let now = new Date(Date.now());
+  
+  // Round up to the next hour, since it could generate a schedule with a start time in the past otherwise
+  if (now.getMinutes() > 0 || now.getSeconds() > 0 || now.getMilliseconds() > 0) {
+    now.setHours(now.getHours() + 1);
+    now.setMinutes(0);
+    now.setSeconds(0);
+    now.setMilliseconds(0);
+  }
+
   return priceData
     .filter((v) => new Date(v.start).getTime() >= now.getTime())
     .map((v) => {
