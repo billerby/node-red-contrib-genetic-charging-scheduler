@@ -1,5 +1,5 @@
 <script type="text/javascript">
-  RED.nodes.registerType('enell-strategy-genetic-charging', {
+  RED.nodes.registerType('enell-strategy-genetic-charging-seasonal', {
     category: 'Power Saver',
     color: '#a6bbcf',
     defaults: {
@@ -50,6 +50,24 @@
         default: 0,
         validate: RED.validators.number(),
       },
+      restrictChargingEnabled: { value: false },
+      restrictionStartDate: {
+        value: '11-01',
+        validate: RED.validators.regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/),
+      },
+      restrictionEndDate: {
+        value: '03-31',
+        validate: RED.validators.regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/),
+      },
+      restrictionStartTime: {
+        value: '07:00',
+        validate: RED.validators.regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+      },
+      restrictionEndTime: {
+        value: '20:00',
+        validate: RED.validators.regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+      },
+      allowWeekends: { value: true },
     },
     inputs: 1,
     outputs: 1,
@@ -57,10 +75,19 @@
     label: function () {
       return this.name || 'Battery charging schedule';
     },
+    oneditprepare: function () {
+      const toggle = () =>
+        $('.restriction-field').prop(
+          'disabled',
+          !$('#node-input-restrictChargingEnabled').is(':checked')
+        );
+      $('#node-input-restrictChargingEnabled').on('change', toggle);
+      toggle();
+    },
   });
 </script>
 
-<script type="text/html" data-template-name="enell-strategy-genetic-charging">
+<script type="text/html" data-template-name="enell-strategy-genetic-charging-seasonal">
   <div class="form-row">
     <label for="node-input-name" style="width: 240px"><i class="fa fa-tag"></i> Name</label>
     <input type="text" id="node-input-name" placeholder="Name" />
@@ -110,11 +137,47 @@
     >
     <input type="text" id="node-input-numberOfPricePeriods" />
   </div>
+  <h3>Grid charging restriction</h3>
+  <div class="form-row">
+    <label for="node-input-restrictChargingEnabled" style="width: 240px">Enable restriction</label>
+    <input type="checkbox" id="node-input-restrictChargingEnabled" style="width: auto" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-restrictionStartDate" style="width: 240px">Season start (MM-DD)</label>
+    <input type="text" id="node-input-restrictionStartDate" class="restriction-field" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-restrictionEndDate" style="width: 240px">Season end (MM-DD)</label>
+    <input type="text" id="node-input-restrictionEndDate" class="restriction-field" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-restrictionStartTime" style="width: 240px">Daily start (HH:mm)</label>
+    <input type="text" id="node-input-restrictionStartTime" class="restriction-field" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-restrictionEndTime" style="width: 240px">Daily end (HH:mm)</label>
+    <input type="text" id="node-input-restrictionEndTime" class="restriction-field" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-allowWeekends" style="width: 240px">Allow charging on weekends</label>
+    <input
+      type="checkbox"
+      id="node-input-allowWeekends"
+      class="restriction-field"
+      style="width: auto"
+    />
+  </div>
 </script>
 
-<script type="text/html" data-help-name="enell-strategy-genetic-charging">
+<script type="text/html" data-help-name="enell-strategy-genetic-charging-seasonal">
   <p>
     A strategy addon for powersaver to calculate the optimal batter charging schedule using genetic
     algorithms
+  </p>
+  <p>
+    With the grid charging restriction enabled, the battery is never scheduled to charge from the
+    grid between the daily start and end time within the season (for example a power tariff on
+    weekdays 07:00-20:00, November to March). A charging period that would cross into that time is
+    cut at the boundary, and the rest of it is reported as idle.
   </p>
 </script>

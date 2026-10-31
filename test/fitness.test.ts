@@ -93,6 +93,43 @@ describe('Fitness - splitIntoHourIntervals', () => {
       { start: 120, activity: 1, duration: 30 },
     ]);
   });
+
+  describe('with blocked charging', () => {
+    // Minutes 60-119 blocked, as 07:00-08:00 for a schedule starting 06:00
+    const blocked = Array.from({ length: 180 }, (_, minute) => minute >= 60 && minute < 120);
+
+    test('should turn charging in blocked minutes into idle', () => {
+      expect(
+        splitIntoHourIntervals({ start: 43, activity: 1, duration: 100 }, blocked)
+      ).toMatchObject([
+        { start: 43, activity: 1, duration: 17 },
+        { start: 60, activity: 0, duration: 60 },
+        { start: 120, activity: 1, duration: 23 },
+      ]);
+    });
+
+    test('should split at a boundary inside an hour', () => {
+      const halfHour = Array.from({ length: 120 }, (_, minute) => minute >= 30);
+      expect(
+        splitIntoHourIntervals({ start: 0, activity: 1, duration: 60 }, halfHour)
+      ).toMatchObject([
+        { start: 0, activity: 1, duration: 30 },
+        { start: 30, activity: 0, duration: 30 },
+      ]);
+    });
+
+    test('should leave discharging and idle untouched', () => {
+      for (const activity of [-1, 0] as const) {
+        expect(
+          splitIntoHourIntervals({ start: 43, activity, duration: 100 }, blocked)
+        ).toMatchObject([
+          { start: 43, activity, duration: 17 },
+          { start: 60, activity, duration: 60 },
+          { start: 120, activity, duration: 23 },
+        ]);
+      }
+    });
+  });
 });
 
 describe('Fitness - allPeriods', () => {

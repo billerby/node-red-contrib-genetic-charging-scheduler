@@ -12,7 +12,7 @@ describe('Battery charging strategy Node', () => {
     const flow = [
       {
         id: 'n1',
-        type: 'enell-strategy-genetic-charging',
+        type: 'enell-strategy-genetic-charging-seasonal',
         name: 'test name',
       },
     ];
@@ -36,7 +36,7 @@ describe('Battery charging strategy Node', () => {
     const flow = [
       {
         id: 'n1',
-        type: 'enell-strategy-genetic-charging',
+        type: 'enell-strategy-genetic-charging-seasonal',
         name: 'test name',
         populationSize: 10,
         numberOfPricePeriods: 3,
@@ -94,7 +94,7 @@ describe('Battery charging strategy Node', () => {
     const flow = [
       {
         id: 'n1',
-        type: 'enell-strategy-genetic-charging',
+        type: 'enell-strategy-genetic-charging-seasonal',
         name: 'test name',
         populationSize: 10,
         numberOfPricePeriods: 3,
@@ -149,11 +149,68 @@ describe('Battery charging strategy Node', () => {
     });
   });
 
+  it('should accept a numeric soc and a charging restriction', async () => {
+    // Same settings as the production flow; Home Assistant's current-state node sends soc as a number
+    const flow = [
+      {
+        id: 'n1',
+        type: 'enell-strategy-genetic-charging-seasonal',
+        name: 'test name',
+        populationSize: 10,
+        numberOfPricePeriods: 8,
+        generations: 10,
+        mutationRate: 3,
+        batteryMaxEnergy: 15,
+        batteryMaxInputPower: 5,
+        averageConsumption: 2,
+        restrictChargingEnabled: true,
+        restrictionStartDate: '11-01',
+        restrictionEndDate: '03-31',
+        restrictionStartTime: '07:00',
+        restrictionEndTime: '20:00',
+        allowWeekends: true,
+        wires: [['n2']],
+      },
+      { id: 'n2', type: 'helper' },
+    ];
+
+    await new Promise((resolve, reject) => {
+      helper.load(node, flow, function callback() {
+        const now = moment().add(1, 'h').startOf('hour');
+        const inputPayload = {
+          soc: 42,
+          priceData: Array.from({ length: 24 }, (_, index) => ({
+            start: now.clone().add(index, 'h').toISOString(),
+            value: 1 + (index % 5),
+          })),
+        };
+
+        const n2 = helper.getNode('n2');
+        const n1 = helper.getNode('n1');
+        n2.on('input', function inputCallback(msg) {
+          try {
+            expect(msg.error).toBeUndefined();
+            expect(msg.payload.schedule.length).toBeGreaterThan(0);
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        });
+
+        n1.on('call:error', (call) => {
+          reject(call.args[0]);
+        });
+
+        n1.receive({ payload: inputPayload });
+      });
+    });
+  });
+
   it('should handle empty priceData', async () => {
     const flow = [
       {
         id: 'n1',
-        type: 'enell-strategy-genetic-charging',
+        type: 'enell-strategy-genetic-charging-seasonal',
         name: 'test name',
         wires: [['n2']],
       },

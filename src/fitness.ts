@@ -17,17 +17,31 @@ export type FitnessFunctionProps = {
   soc: number;
   totalDuration: number;
   batteryIdleLoss: number;
+  chargingBlocked?: boolean[];
 };
 
-export function* splitIntoHourIntervalsGenerator(seed: TimePeriod) {
+/**
+ * Splits a period at every hour, and for charging also wherever chargingBlocked
+ * changes. Charging in blocked minutes is yielded as idle, since the battery may
+ * not charge from the grid then.
+ */
+export function* splitIntoHourIntervalsGenerator(seed: TimePeriod, chargingBlocked?: boolean[]) {
   let remainingDuration = seed.duration ?? 0;
   let start = seed.start;
   while (remainingDuration > 0) {
-    const i = Math.min(60 - (start % 60), remainingDuration);
+    let i = Math.min(60 - (start % 60), remainingDuration);
+    let activity = seed.activity;
+    if (activity === 1 && chargingBlocked) {
+      const blocked = chargingBlocked[start];
+      let j = 1;
+      while (j < i && chargingBlocked[start + j] === blocked) j += 1;
+      i = j;
+      if (blocked) activity = 0;
+    }
     yield {
       start: start,
       duration: i,
-      activity: seed.activity,
+      activity,
     };
     start += i;
     remainingDuration -= i;
@@ -35,8 +49,8 @@ export function* splitIntoHourIntervalsGenerator(seed: TimePeriod) {
   return;
 }
 
-export const splitIntoHourIntervals = (seed: TimePeriod) => [
-  ...splitIntoHourIntervalsGenerator(seed),
+export const splitIntoHourIntervals = (seed: TimePeriod, chargingBlocked?: boolean[]) => [
+  ...splitIntoHourIntervalsGenerator(seed, chargingBlocked),
 ];
 
 export function* allPeriodsGenerator(props: FitnessFunctionProps, phenotype: Phenotype) {
@@ -171,11 +185,17 @@ export const calculatePeriodScore = (
   excessPvEnergyUse: number | undefined,
   _currentCharge: number
 ) => {
-  const { input, batteryMaxEnergy, batteryMaxInputPower, batteryMaxOutputPower, batteryIdleLoss } =
-    props;
+  const {
+    input,
+    batteryMaxEnergy,
+    batteryMaxInputPower,
+    batteryMaxOutputPower,
+    batteryIdleLoss,
+    chargingBlocked,
+  } = props;
   let cost = 0;
   let currentCharge = _currentCharge;
-  for (const interval of splitIntoHourIntervals(period)) {
+  for (const interval of splitIntoHourIntervals(period, chargingBlocked)) {
     const duration = interval.duration / 60;
     const maxCharge = Math.min(batteryMaxInputPower * duration, batteryMaxEnergy - currentCharge);
     const maxDischarge = Math.min(batteryMaxOutputPower * duration, currentCharge);

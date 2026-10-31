@@ -130,3 +130,84 @@ describe('Calculate', () => {
     expect(values).toBeDefined();
   });
 });
+
+describe('Calculate with charging restriction', () => {
+  const restriction = {
+    startDate: '11-01',
+    endDate: '03-31',
+    startTime: '07:00',
+    endTime: '20:00',
+    allowWeekends: true,
+  };
+
+  // The 19:00 run on Sunday 2026-11-01 plans until Monday night. Prices are cheapest
+  // 03-10 on Monday, so an unrestricted optimizer charges well past 07:00.
+  const runMonday = (chargingRestriction?: typeof restriction) => {
+    vi.useFakeTimers({ now: moment('2026-11-01 19:00', 'YYYY-MM-DD HH:mm').toDate() });
+    const first = moment('2026-11-01 20:00', 'YYYY-MM-DD HH:mm');
+    const priceData = Array.from({ length: 28 }, (_, h) => {
+      const start = first.clone().add(h, 'h');
+      const hour = start.hours();
+      const price = hour >= 3 && hour < 10 ? 0.3 : hour >= 16 && hour < 20 ? 3 : 1;
+      return { start: start.unix(), importPrice: price, exportPrice: price };
+    });
+    const config: Config = {
+      priceData,
+      consumptionForecast: [],
+      productionForecast: [],
+      populationSize: 50,
+      numberOfPricePeriods: 8,
+      generations: 400,
+      mutationRate: 0.03,
+      batteryMaxEnergy: 15,
+      batteryMaxOutputPower: 5,
+      batteryMaxInputPower: 5,
+      averageConsumption: 2,
+      excessPvEnergyUse: 0,
+      soc: 0.1,
+      batteryIdleLoss: 0,
+      chargingRestriction,
+    };
+    const strategy = calculateBatteryChargingStrategy(config)!;
+    vi.useRealTimers();
+    return { strategy, first, totalDuration: priceData.length * 60 };
+  };
+
+  const tariffStart = moment('2026-11-02 07:00', 'YYYY-MM-DD HH:mm');
+  const tariffEnd = moment('2026-11-02 20:00', 'YYYY-MM-DD HH:mm');
+  const chargesDuringTariff = (schedule: { start: string; activity: number; duration: number }[]) =>
+    schedule.some((p) => {
+      const start = moment(p.start);
+      const end = start.clone().add(p.duration, 'm');
+      return p.activity === 1 && start.isBefore(tariffEnd) && end.isAfter(tariffStart);
+    });
+
+  test('an unrestricted schedule charges during tariff time', () => {
+    seed = 1;
+    vi.spyOn(Math, 'random').mockImplementation(random);
+    const { strategy } = runMonday();
+    expect(chargesDuringTariff(strategy.best.schedule)).toBe(true);
+  });
+
+  test.each([1, 1000, 5000])('never charges during tariff time (seed %i)', (s) => {
+    seed = s;
+    vi.spyOn(Math, 'random').mockImplementation(random);
+    const { strategy, first, totalDuration } = runMonday(restriction);
+    const schedule = strategy.best.schedule;
+
+    expect(chargesDuringTariff(schedule)).toBe(false);
+    // Still charges in the cheap hours before the tariff starts
+    expect(schedule.some((p) => p.activity === 1 && moment(p.start).isBefore(tariffStart))).toBe(
+      true
+    );
+
+    // Contiguous from the first price hour to the last, nothing lost when splitting
+    let expectedStart = first.clone();
+    for (const p of schedule) {
+      expect(moment(p.start).toISOString()).toEqual(expectedStart.toISOString());
+      expectedStart = expectedStart.clone().add(p.duration, 'm');
+    }
+    expect(schedule.reduce((acc, p) => acc + p.duration, 0)).toBe(totalDuration);
+    expect(schedule.reduce((acc, p) => acc + p.cost, 0)).toBeCloseTo(strategy.best.cost, 6);
+  });
+});

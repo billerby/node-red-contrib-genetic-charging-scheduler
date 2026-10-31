@@ -3,13 +3,16 @@ import {
   fitnessFunction,
   allPeriodsGenerator,
   allPeriods,
+  calculatePeriodScore,
   cost,
   FitnessFunctionProps,
+  splitIntoHourIntervals,
 } from './fitness';
 import { Activity, Phenotype, populationFunction, TimePeriod } from './population';
 import { mutationFunction } from './mutation';
 import { crossoverFunction } from './crossover';
 import { DoublyLinkedList } from './schedule';
+import { ChargingRestriction, chargingBlockedMask } from './utils';
 import moment from 'moment';
 
 type Price = {
@@ -39,6 +42,39 @@ export type Config = {
   excessPvEnergyUse: 0 | 1;
   soc: number;
   batteryIdleLoss: number;
+  chargingRestriction?: ChargingRestriction;
+};
+
+/**
+ * A charging period that crosses a restriction boundary is reported as charging
+ * outside it and idle inside it, with cost and charge split to match.
+ */
+const effectivePeriods = (
+  props: FitnessFunctionProps,
+  period: TimePeriod,
+  excessPvEnergyUse: number | undefined,
+  currentCharge: number
+): TimePeriod[] => {
+  if (!props.chargingBlocked || period.activity !== 1) {
+    return [period];
+  }
+
+  const runs: TimePeriod[] = [];
+  for (const interval of splitIntoHourIntervals(period, props.chargingBlocked)) {
+    const last = runs.at(-1);
+    if (last && last.activity === interval.activity) {
+      last.duration = (last.duration ?? 0) + interval.duration;
+    } else {
+      runs.push({ ...interval });
+    }
+  }
+
+  let charge = currentCharge;
+  return runs.map((run) => {
+    const [runCost, runCharge] = calculatePeriodScore(props, run, excessPvEnergyUse, charge);
+    charge += runCharge;
+    return { ...run, cost: runCost, charge: runCharge };
+  });
 };
 
 const toSchedule = (
@@ -52,7 +88,7 @@ const toSchedule = (
   cost: number;
   charge: number;
 }[] => {
-  const { input } = props;
+  const { input, soc, batteryMaxEnergy } = props;
 
   const activityToName = (activity: Activity) => {
     switch (activity) {
@@ -74,26 +110,35 @@ const toSchedule = (
     charge: number;
   }[] = [];
   const periodStart = moment.unix(input[0].start);
-  for (const period of allPeriodsGenerator(props, phenotype)) {
-    if (period.duration != undefined && period.duration <= 0) {
+  let currentCharge = soc * batteryMaxEnergy;
+  for (const fullPeriod of allPeriodsGenerator(props, phenotype)) {
+    if (fullPeriod.duration != undefined && fullPeriod.duration <= 0) {
       continue;
     }
 
-    const lastPeriod = schedule.at(-1)!;
-    if (lastPeriod && lastPeriod.activity === period.activity) {
-      lastPeriod.duration += period.duration ?? 0;
-      lastPeriod.cost += period.cost ?? 0;
-      lastPeriod.charge += period.charge ?? 0;
-    } else {
-      schedule.push({
-        start: periodStart.clone().add(period.start, 'm').toISOString(),
-        activity: period.activity,
-        name: activityToName(period.activity),
-        duration: period.duration ?? 0,
-        cost: period.cost ?? 0,
-        charge: period.charge ?? 0,
-      });
+    for (const period of effectivePeriods(
+      props,
+      fullPeriod,
+      phenotype.excessPvEnergyUse,
+      currentCharge
+    )) {
+      const lastPeriod = schedule.at(-1)!;
+      if (lastPeriod && lastPeriod.activity === period.activity) {
+        lastPeriod.duration += period.duration ?? 0;
+        lastPeriod.cost += period.cost ?? 0;
+        lastPeriod.charge += period.charge ?? 0;
+      } else {
+        schedule.push({
+          start: periodStart.clone().add(period.start, 'm').toISOString(),
+          activity: period.activity,
+          name: activityToName(period.activity),
+          duration: period.duration ?? 0,
+          cost: period.cost ?? 0,
+          charge: period.charge ?? 0,
+        });
+      }
     }
+    currentCharge += fullPeriod.charge ?? 0;
   }
 
   return schedule;
@@ -108,9 +153,14 @@ const mergeInput = (config: Config) => {
     productionForecast,
   } = config;
 
-  const startOfHour = moment().startOf('hour').unix();
+  // Start at the next whole hour, so the schedule never begins in the past
+  const now = moment();
+  const firstHour = now.clone().startOf('hour');
+  if (now.isAfter(firstHour)) {
+    firstHour.add(1, 'h');
+  }
   return priceData
-    .filter((v) => v.start >= startOfHour)
+    .filter((v) => v.start >= firstHour.unix())
     .map((v) => {
       return {
         start: v.start,
@@ -130,11 +180,13 @@ export const calculateBatteryChargingStrategy = (config: Config) => {
   const input = mergeInput(config);
   if (input === undefined || input.length === 0) return;
 
+  const totalDuration = input.length * 60;
   const props = {
     ...config,
     input,
-    totalDuration: input.length * 60,
+    totalDuration,
     batteryIdleLoss: config.batteryIdleLoss ?? 0,
+    chargingBlocked: chargingBlockedMask(input[0].start, totalDuration, config.chargingRestriction),
   };
 
   const options: Options<Phenotype> = {

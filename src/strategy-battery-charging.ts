@@ -51,8 +51,9 @@ const PayloadSchema = z.object({
     )
     .optional()
     .default([]),
+  // Home Assistant's current-state node sends a number, Node-RED inject sends a string
   soc: z
-    .string()
+    .union([z.string(), z.number()])
     .transform((val, ctx) => {
       const num = Number(val);
       if (isNaN(num)) {
@@ -101,6 +102,12 @@ export default (RED: NodeAPI) => {
       batteryMaxInputPower: number;
       averageConsumption: number;
       batteryIdleLoss: number;
+      restrictChargingEnabled?: boolean;
+      restrictionStartDate?: string;
+      restrictionEndDate?: string;
+      restrictionStartTime?: string;
+      restrictionEndTime?: string;
+      allowWeekends?: boolean;
     } & NodeDef
   ) {
     RED.nodes.createNode(this, config);
@@ -114,7 +121,28 @@ export default (RED: NodeAPI) => {
       batteryMaxInputPower,
       averageConsumption,
       batteryIdleLoss,
+      restrictChargingEnabled,
+      restrictionStartDate,
+      restrictionEndDate,
+      restrictionStartTime,
+      restrictionEndTime,
+      allowWeekends,
     } = config;
+
+    const chargingRestriction =
+      restrictChargingEnabled &&
+      restrictionStartDate &&
+      restrictionEndDate &&
+      restrictionStartTime &&
+      restrictionEndTime
+        ? {
+            startDate: restrictionStartDate,
+            endDate: restrictionEndDate,
+            startTime: restrictionStartTime,
+            endTime: restrictionEndTime,
+            allowWeekends: allowWeekends ?? true,
+          }
+        : undefined;
 
     this.on('input', (msg, send, done) => {
       const result = PayloadSchema.safeParse(msg.payload);
@@ -147,6 +175,7 @@ export default (RED: NodeAPI) => {
         excessPvEnergyUse: 0, // 0=Fed to grid, 1=Charge
         soc: soc / 100,
         batteryIdleLoss,
+        chargingRestriction,
       });
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -168,5 +197,8 @@ export default (RED: NodeAPI) => {
     });
   }
 
-  RED.nodes.registerType('enell-strategy-genetic-charging', StrategyBatteryChargingConstructor);
+  RED.nodes.registerType(
+    'enell-strategy-genetic-charging-seasonal',
+    StrategyBatteryChargingConstructor
+  );
 };
